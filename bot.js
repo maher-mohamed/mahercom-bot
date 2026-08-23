@@ -451,40 +451,45 @@ client.on('messageCreate', async (message) => {
     if (message.author.bot || message.guild?.id !== GUILD_ID) return;
     
     const content = message.content.trim();
-    const args = content.split(/\s+/);
-    const cmd = args[0]?.toLowerCase();
+    if (!content.startsWith('!clip') && !content.startsWith('!كليب')) return;
     
-    if (cmd === '!clip' || cmd === '!كليب') {
-        const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
-        const isOwner = message.author.id === message.guild.ownerId;
-        const isAdmin = isOwner || member?.permissions.has(PermissionFlagsBits.Administrator) || member?.permissions.has('Administrator');
-        
-        if (!isAdmin) {
-            return message.reply("❌ هذا الأمر مخصص للإدارة فقط! 👀");
+    console.log(`[CLIP CMD] Received from ${message.author.tag} in #${message.channel.name}: ${content}`);
+
+    const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
+    const isOwner = message.author.id === message.guild.ownerId;
+    const isAdmin = isOwner || 
+                    member?.permissions.has(PermissionFlagsBits.Administrator) || 
+                    member?.permissions.has(PermissionFlagsBits.ManageMessages) ||
+                    member?.permissions.has(PermissionFlagsBits.ManageGuild);
+    
+    if (!isAdmin) {
+        return message.reply("❌ هذا الأمر مخصص للإدارة فقط! 👀");
+    }
+    
+    // Find Twitch clip URL from message
+    const urlMatch = content.match(/https?:\/\/(?:www\.)?(?:clips\.twitch\.tv\/[^\s]+|twitch\.tv\/[a-zA-Z0-9_]+\/clip\/[^\s]+)/i);
+    let rawUrl = urlMatch ? urlMatch[0] : content.split(/\s+/)[1];
+    
+    if (!rawUrl) {
+        return message.reply("⚠️ **يرجى كتابة رابط الكليب بعد الأمر!**\nمثال:\n`!clip https://clips.twitch.tv/YourClipSlug`");
+    }
+    
+    const slugMatch = rawUrl.match(/(?:clip\/|clips\.twitch\.tv\/)([^/?#\s]+)/);
+    const slug = slugMatch ? slugMatch[1] : rawUrl.trim();
+    
+    const progressMsg = await message.reply("🔄 **جاري جلب بيانات الكليب وتجهيز الرسالة...**");
+    
+    try {
+        const clip = await getClipBySlug(slug);
+        if (!clip) {
+            return progressMsg.edit("❌ **تعذر العثور على الكليب في Twitch!** تأكد من صحة الرابط.");
         }
         
-        const clipUrl = args[1];
-        if (!clipUrl) {
-            return message.reply("⚠️ **يرجى كتابة رابط الكليب بعد الأمر!**\nمثال:\n`!clip https://clips.twitch.tv/YourClipSlug`");
-        }
-        
-        const match = clipUrl.match(/(?:clip\/|clips\.twitch\.tv\/)([^/?#\s]+)/);
-        const slug = match ? match[1] : clipUrl.trim();
-        
-        const progressMsg = await message.reply("🔄 **جاري جلب بيانات الكليب وتجهيز الرسالة...**");
-        
-        try {
-            const clip = await getClipBySlug(slug);
-            if (!clip) {
-                return progressMsg.edit("❌ **تعذر العثور على الكليب في Twitch!** تأكد من صحة الرابط.");
-            }
-            
-            await publishClipToChannel(message.guild, clip);
-            await progressMsg.edit(`✅ **تم نشر الكليب بنجاح في <#${CLIPS_CHANNEL_ID}>!** 🚀💙\n🎬 **${clip.title}**`);
-        } catch (err) {
-            console.error('Error in !clip text command:', err);
-            await progressMsg.edit(`❌ **حدث خطأ أثناء معالجة الكليب:** ${err.message}`);
-        }
+        await publishClipToChannel(message.guild, clip);
+        await progressMsg.edit(`✅ **تم نشر الكليب بنجاح في <#${CLIPS_CHANNEL_ID}>!** 🚀💙\n🎬 **${clip.title}**`);
+    } catch (err) {
+        console.error('Error in !clip text command:', err);
+        await progressMsg.edit(`❌ **حدث خطأ أثناء معالجة الكليب:** ${err.message}`);
     }
 });
 
