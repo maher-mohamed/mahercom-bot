@@ -82,6 +82,17 @@ function saveDb() {
     try { fs.writeFileSync(dbPath, JSON.stringify(rolesDb, null, 2), 'utf8'); } catch (e) {}
 }
 
+// Posted Clips DB (persisted to file so bot doesn't re-post after restart)
+const clipsDbPath = path.join(__dirname, 'posted_clips.json');
+let postedClipsArr = [];
+if (fs.existsSync(clipsDbPath)) {
+    try { postedClipsArr = JSON.parse(fs.readFileSync(clipsDbPath, 'utf8')); } catch (e) {}
+}
+const postedClips = new Set(postedClipsArr);
+function saveClipsDb() {
+    try { fs.writeFileSync(clipsDbPath, JSON.stringify([...postedClips], null, 2), 'utf8'); } catch (e) {}
+}
+
 // Client Ready
 client.once('ready', async () => {
     console.log(`=================================================================`);
@@ -246,7 +257,6 @@ client.on('messageReactionRemove', async (reaction, user) => {
 
 // Twitch Live & Clips Engine
 let isLive = false;
-const postedClips = new Set();
 
 async function startTwitchMonitor() {
     setInterval(async () => {
@@ -327,6 +337,7 @@ async function startTwitchMonitor() {
                     const clip = edge.node;
                     if (!postedClips.has(clip.slug)) {
                         postedClips.add(clip.slug);
+                        saveClipsDb();
                         const clipsChannel = guild.channels.cache.get(CLIPS_CHANNEL_ID);
                         if (clipsChannel) {
                             const clipEmbed = new EmbedBuilder()
