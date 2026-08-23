@@ -1,7 +1,6 @@
-const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require('discord.js');
 const axios = require('axios');
 const fs = require('fs');
-const path = require('path');
 const express = require('express');
 const net = require('net');
 
