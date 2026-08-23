@@ -117,17 +117,6 @@ client.once('ready', async () => {
         }
     } catch (e) { console.error('Pre-fetch error:', e); }
 
-    // Pre-load existing Twitch clips so bot doesn't re-post them on restart
-    try {
-        const res = await axios.post('https://gql.twitch.tv/gql', {
-            query: `query { user(login: "${STREAMER}") { clips(first: 20, criteria: { filter: LAST_WEEK }) { edges { node { slug } } } } }`
-        }, { headers: { 'Client-ID': 'kimne78kx3ncx6brgo4mv6wki5h1ko', 'Content-Type': 'application/json' } });
-        const clips = res.data?.data?.user?.clips?.edges || [];
-        clips.forEach(e => postedClips.add(e.node.slug));
-        saveClipsDb();
-        console.log(`✅ Pre-loaded ${clips.length} existing clips - won't re-post on restart!`);
-    } catch (e) { console.error('Clips pre-load error:', e); }
-
     startTwitchMonitor();
 });
 
