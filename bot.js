@@ -208,21 +208,30 @@ client.on('messageReactionAdd', async (reaction, user) => {
         console.log(`🎯 Assigned game role ${gameRoleMap[emojiTag]} to ${user.username}`);
     }
 
-    // Helper: Notify blocked rank (DM with channel fallback if DMs are closed)
+    // Helper: Notify blocked rank (DM + Channel visible alert)
     async function notifyRankBlocked(gameName, emoji) {
         const dmText = `⚠️ **عندك رانك ${gameName} بالفعل! | You already have a ${gameName} rank!**\n` +
-                       `شيل الرانك الحالي الأول وبعدين اختار الجديد ${emoji}\n` +
+                       `شيل الرانك الحالي الأول من قناة الرانكات وبعدين اختار الجديد ${emoji}\n` +
                        `Remove your current rank first, then pick a new one! ${emoji}`;
+        
+        // 1) Try sending in DM
         try {
-            await user.send(dmText);
+            const fullUser = await client.users.fetch(user.id).catch(() => user);
+            await fullUser.send(dmText);
+            console.log(`✉️ Sent DM warning to ${user.username}`);
         } catch (e) {
-            // If DM is closed in user settings, send a temporary 6-second message in the channel
-            try {
-                const tempMsg = await reaction.message.channel.send(
-                    `<@${user.id}> ⚠️ **عندك رانك ${gameName} بالفعل!** شيل الرانك القديم الأول ${emoji}`
-                );
-                setTimeout(() => tempMsg.delete().catch(() => {}), 6000);
-            } catch (err) {}
+            console.log(`ℹ️ Could not DM ${user.username} (DMs might be closed): ${e.message}`);
+        }
+
+        // 2) Send an instant 8-second temporary message in the channel directly
+        try {
+            const tempMsg = await reaction.message.channel.send(
+                `<@${user.id}> ⚠️ **عندك رانك ${gameName} بالفعل!** شيل الرانك القديم الأول ${emoji}`
+            );
+            setTimeout(() => tempMsg.delete().catch(() => {}), 8000);
+            console.log(`📢 Sent channel temporary warning for ${user.username}`);
+        } catch (err) {
+            console.error('Channel alert error:', err.message);
         }
     }
 
