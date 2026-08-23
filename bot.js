@@ -309,9 +309,8 @@ client.on('messageReactionRemove', async (reaction, user) => {
 
 // Twitch Live & Clips Engine
 
-async function startTwitchMonitor() {
-    setInterval(async () => {
-        try {
+async function checkTwitch(manualChannel = null) {
+    try {
             const query = {
                 query: `
                 query {
@@ -385,12 +384,14 @@ async function startTwitchMonitor() {
             }
 
             // Clips
+            let newClipsCount = 0;
             if (user.clips?.edges) {
                 for (const edge of user.clips.edges) {
                     const clip = edge.node;
                     if (!postedClips.has(clip.slug)) {
                         postedClips.add(clip.slug);
                         saveClipsDb();
+                        newClipsCount++;
                         const clipsChannel = guild.channels.cache.get(CLIPS_CHANNEL_ID);
                         if (clipsChannel) {
                             const clipEmbed = new EmbedBuilder()
@@ -413,9 +414,31 @@ async function startTwitchMonitor() {
                     }
                 }
             }
-        } catch (e) {}
-    }, 300000); // every 5 minutes
+
+            if (manualChannel) {
+                if (newClipsCount > 0) await manualChannel.send(`✅ تم العثور على **${newClipsCount}** كليبات جديدة وتم إرسالهم في قناة الكليبات! 🎬`);
+                else await manualChannel.send(`ℹ️ بحثت، بس مفيش كليبات جديدة نزلت في آخر فترة. 🤷‍♂️`);
+            }
+        } catch (e) {
+            if (manualChannel) await manualChannel.send(`❌ حصل مشكلة في الاتصال بـ Twitch: ${e.message}`);
+        }
 }
+
+function startTwitchMonitor() {
+    setInterval(() => checkTwitch(), 300000); // every 5 minutes
+}
+
+// Manual Check Command
+client.on('messageCreate', async (message) => {
+    if (message.author.bot || message.guild?.id !== GUILD_ID) return;
+    if (message.content.trim() === '!clips') {
+        if (!message.member.permissions.has('Administrator')) {
+            return message.reply("❌ الأمر ده للإدارة بس يا صاحبي! 👀");
+        }
+        await message.reply("🔄 ثواني بجيب آخر الكليبات من Twitch...");
+        await checkTwitch(message.channel);
+    }
+});
 
 // Start
 client.login(TOKEN);
