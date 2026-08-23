@@ -217,12 +217,20 @@ client.on('messageReactionAdd', async (reaction, user) => {
         const freshMember = await reaction.message.guild.members.fetch({ user: user.id, force: true }).catch(() => member);
         const newRoleId = valoRankMap[emojiTag];
         
-        // Remove any previous Valo ranks automatically
+        // Remove any previous Valo rank ROLES automatically
         const oldRanks = Object.values(valoRankMap).filter(rid => rid !== newRoleId && freshMember.roles.cache.has(rid));
         for (const oldRid of oldRanks) {
             await freshMember.roles.remove(oldRid).catch(() => {});
         }
         
+        // Remove old Valo rank REACTIONS from the message (visual cleanup)
+        for (const oldEmojiKey of Object.keys(valoRankMap)) {
+            if (oldEmojiKey === emojiTag) continue;
+            const oldEmojiId = oldEmojiKey.split(':')[1];
+            const oldReaction = reaction.message.reactions.cache.get(oldEmojiId);
+            if (oldReaction) await oldReaction.users.remove(user.id).catch(() => {});
+        }
+
         // Assign the new rank role
         await freshMember.roles.add(newRoleId).catch(() => {});
         console.log(`🎯 [Valo Rank] Assigned to ${user.username} (Removed ${oldRanks.length} old ranks)`);
@@ -233,12 +241,20 @@ client.on('messageReactionAdd', async (reaction, user) => {
         const freshMember = await reaction.message.guild.members.fetch({ user: user.id, force: true }).catch(() => member);
         const newRoleId = leagueRankMap[emojiTag];
         
-        // Remove any previous League ranks automatically
+        // Remove any previous League rank ROLES automatically
         const oldRanks = Object.values(leagueRankMap).filter(rid => rid !== newRoleId && freshMember.roles.cache.has(rid));
         for (const oldRid of oldRanks) {
             await freshMember.roles.remove(oldRid).catch(() => {});
         }
         
+        // Remove old League rank REACTIONS from the message (visual cleanup)
+        for (const oldEmojiKey of Object.keys(leagueRankMap)) {
+            if (oldEmojiKey === emojiTag) continue;
+            const oldEmojiId = oldEmojiKey.split(':')[1];
+            const oldReaction = reaction.message.reactions.cache.get(oldEmojiId);
+            if (oldReaction) await oldReaction.users.remove(user.id).catch(() => {});
+        }
+
         // Assign the new rank role
         await freshMember.roles.add(newRoleId).catch(() => {});
         console.log(`⚔️ [League Rank] Assigned to ${user.username} (Removed ${oldRanks.length} old ranks)`);
