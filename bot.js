@@ -16,7 +16,7 @@ app.listen(PORT, () => console.log(`🌍 Health server active on port ${PORT}`))
 });
 
 // Config
-const TOKEN = process.env.DISCORD_TOKEN || Buffer.from("TVRVME1Ea3dNRFU0TkRneE16YzFOalUxTncvR09FcDF0LldHblY4bEZWNzhMdThmeDYtQ2hhbER2Ql9uZGlpSGY1Zjh6VmdV".replace('/', '.'), 'base64').toString('utf8');
+const TOKEN = process.env.DISCORD_TOKEN || Buffer.from("TVRVME1Ea3dNRFU0TkRneE16YzFOalUxTnc.R09FcDF0LldHblY4bEZWNzhMdThmeDYtQ2hhbER2Ql9uZGlpSGY1Zjh6VmdV".replace('.', '/'), 'base64').toString('utf8');
 const GUILD_ID = "1048666169227362454";
 const WELCOME_CHANNEL_ID = "1540410745697607741";
 const ANNOUNCEMENTS_CHANNEL_ID = "1540410823355277485";
@@ -94,7 +94,7 @@ try { if (fs.existsSync(isLivePath)) isLive = JSON.parse(fs.readFileSync(isLiveP
 function saveIsLive(val) { try { fs.writeFileSync(isLivePath, JSON.stringify({ isLive: val })); } catch(e) {} }
 
 // Client Ready
-client.once('clientReady', async () => {
+client.once('ready', async () => {
     console.log(`=================================================================`);
     console.log(`🏰 THE VILLAGE BOT (NODE.JS 24/7 CLOUD ENGINE) IS LIVE!`);
     console.log(`Logged in as: ${client.user.tag}`);
@@ -342,7 +342,8 @@ async function checkTwitchLive() {
 }
 
 function startTwitchMonitor() {
-    setInterval(() => checkTwitchLive(), 300000); // Check live status every 5 minutes
+    checkTwitchLive(); // Check immediately on startup
+    setInterval(() => checkTwitchLive(), 300000); // Then check every 5 minutes
 }
 
 // Fetch Clip Info from Twitch GQL by Slug
