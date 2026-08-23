@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits } = require('discord.js');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -111,6 +111,28 @@ client.once('clientReady', async () => {
             console.log(`✅ Reaction role messages pre-fetched and cached!`);
         }
     } catch (e) { console.error('Pre-fetch error:', e); }
+
+    // Register /clip Slash Command directly in the Server
+    try {
+        const guild = client.guilds.cache.get(GUILD_ID);
+        if (guild) {
+            await guild.commands.set([
+                {
+                    name: 'clip',
+                    description: 'نشر كليب من Twitch في قناة الكليبات الرسمية',
+                    options: [
+                        {
+                            name: 'url',
+                            description: 'رابط الكليب من Twitch',
+                            type: 3, // STRING
+                            required: true
+                        }
+                    ]
+                }
+            ]);
+            console.log('✅ Guild Slash Command (/clip) registered successfully!');
+        }
+    } catch (e) { console.error('Slash Command register error:', e); }
 
     startTwitchMonitor();
 });
@@ -368,15 +390,76 @@ async function getClipBySlug(slug) {
     return res.data?.data?.clip;
 }
 
-// Manual Clip Poster Command: !clip <link> or !كليب <link>
+// Helper: Build and Send Clip Embed to Channel
+async function publishClipToChannel(guild, clip) {
+    const clipsChannel = guild.channels.cache.get(CLIPS_CHANNEL_ID) || await guild.channels.fetch(CLIPS_CHANNEL_ID).catch(() => null);
+    if (!clipsChannel) throw new Error("قناة الكليبات غير موجودة في السيرفر!");
+
+    const clipEmbed = new EmbedBuilder()
+        .setTitle(`🎥 ${clip.title}`)
+        .setURL(clip.url)
+        .setColor(0x0099FF)
+        .addFields(
+            { name: '👤 Clipped By', value: clip.curator?.displayName || 'Viewer', inline: true },
+            { name: '⏱️ Duration', value: `${clip.durationSeconds}s`, inline: true }
+        )
+        .setImage(clip.thumbnailURL)
+        .setFooter({ text: 'The Village Clips • Mahercom' })
+        .setTimestamp();
+
+    await clipsChannel.send({
+        content: `🎬 **New Clip from Mahercom's Stream!**\n${clip.url}`,
+        embeds: [clipEmbed]
+    });
+}
+
+// 1) Slash Command (/clip) Handler
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+    
+    if (interaction.commandName === 'clip') {
+        const isOwner = interaction.user.id === interaction.guild?.ownerId;
+        const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) || isOwner;
+        
+        if (!isAdmin) {
+            return interaction.reply({ content: '❌ هذا الأمر مخصص للإدارة فقط! 👀', ephemeral: true });
+        }
+        
+        const clipUrl = interaction.options.getString('url');
+        const match = clipUrl.match(/(?:clip\/|clips\.twitch\.tv\/)([^/?#\s]+)/);
+        const slug = match ? match[1] : clipUrl.trim();
+        
+        await interaction.deferReply({ ephemeral: false });
+        
+        try {
+            const clip = await getClipBySlug(slug);
+            if (!clip) {
+                return interaction.editReply("❌ **تعذر العثور على الكليب في Twitch!** تأكد من صحة الرابط.");
+            }
+            
+            await publishClipToChannel(interaction.guild, clip);
+            await interaction.editReply(`✅ **تم نشر الكليب بنجاح في <#${CLIPS_CHANNEL_ID}>!** 🚀💙\n🎬 **${clip.title}**`);
+        } catch (err) {
+            console.error('Error in /clip slash command:', err);
+            await interaction.editReply(`❌ **حدث خطأ أثناء معالجة الكليب:** ${err.message}`);
+        }
+    }
+});
+
+// 2) Text Command (!clip / !كليب) Handler
 client.on('messageCreate', async (message) => {
     if (message.author.bot || message.guild?.id !== GUILD_ID) return;
     
-    const args = message.content.trim().split(/\s+/);
+    const content = message.content.trim();
+    const args = content.split(/\s+/);
     const cmd = args[0]?.toLowerCase();
     
     if (cmd === '!clip' || cmd === '!كليب') {
-        if (!message.member.permissions.has('Administrator')) {
+        const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
+        const isOwner = message.author.id === message.guild.ownerId;
+        const isAdmin = isOwner || member?.permissions.has(PermissionFlagsBits.Administrator) || member?.permissions.has('Administrator');
+        
+        if (!isAdmin) {
             return message.reply("❌ هذا الأمر مخصص للإدارة فقط! 👀");
         }
         
@@ -396,31 +479,10 @@ client.on('messageCreate', async (message) => {
                 return progressMsg.edit("❌ **تعذر العثور على الكليب في Twitch!** تأكد من صحة الرابط.");
             }
             
-            const clipsChannel = message.guild.channels.cache.get(CLIPS_CHANNEL_ID) || await message.guild.channels.fetch(CLIPS_CHANNEL_ID).catch(() => null);
-            if (!clipsChannel) {
-                return progressMsg.edit("❌ **تعذر العثور على قناة الكليبات في السيرفر!**");
-            }
-            
-            const clipEmbed = new EmbedBuilder()
-                .setTitle(`🎥 ${clip.title}`)
-                .setURL(clip.url)
-                .setColor(0x0099FF)
-                .addFields(
-                    { name: '👤 Clipped By', value: clip.curator?.displayName || 'Viewer', inline: true },
-                    { name: '⏱️ Duration', value: `${clip.durationSeconds}s`, inline: true }
-                )
-                .setImage(clip.thumbnailURL)
-                .setFooter({ text: 'The Village Clips • Mahercom' })
-                .setTimestamp();
-
-            await clipsChannel.send({
-                content: `🎬 **New Clip from Mahercom's Stream!**\n${clip.url}`,
-                embeds: [clipEmbed]
-            });
-            
-            await progressMsg.edit(`✅ **تم نشر الكليب بنجاح في <#${CLIPS_CHANNEL_ID}>!** 🚀💙`);
+            await publishClipToChannel(message.guild, clip);
+            await progressMsg.edit(`✅ **تم نشر الكليب بنجاح في <#${CLIPS_CHANNEL_ID}>!** 🚀💙\n🎬 **${clip.title}**`);
         } catch (err) {
-            console.error('Error posting clip manually:', err);
+            console.error('Error in !clip text command:', err);
             await progressMsg.edit(`❌ **حدث خطأ أثناء معالجة الكليب:** ${err.message}`);
         }
     }
