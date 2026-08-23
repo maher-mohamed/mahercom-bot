@@ -83,13 +83,32 @@ function saveDb() {
 }
 
 // Client Ready
-client.once('ready', () => {
+client.once('ready', async () => {
     console.log(`=================================================================`);
     console.log(`🏰 THE VILLAGE BOT (NODE.JS 24/7 CLOUD ENGINE) IS LIVE!`);
     console.log(`Logged in as: ${client.user.tag}`);
     console.log(`=================================================================`);
+
+    // Pre-fetch reaction role messages so Remove events work correctly
+    try {
+        const guild = client.guilds.cache.get(GUILD_ID);
+        if (guild) {
+            const msgIds = [
+                { channelId: PICK_GAMES_CHANNEL, msgId: PICK_GAMES_MSG_ID },
+                { channelId: VALO_CHANNEL_ID, msgId: VALO_MSG_ID },
+                { channelId: LEAGUE_CHANNEL_ID, msgId: LEAGUE_MSG_ID }
+            ];
+            for (const { channelId, msgId } of msgIds) {
+                const ch = guild.channels.cache.get(channelId);
+                if (ch) await ch.messages.fetch(msgId).catch(() => {});
+            }
+            console.log(`✅ Reaction role messages pre-fetched and cached!`);
+        }
+    } catch (e) { console.error('Pre-fetch error:', e); }
+
     startTwitchMonitor();
 });
+
 
 // Auto-Welcome & Villager Role on Member Join
 client.on('guildMemberAdd', async (member) => {
