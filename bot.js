@@ -208,59 +208,36 @@ client.on('messageReactionAdd', async (reaction, user) => {
         console.log(`🎯 Assigned game role ${gameRoleMap[emojiTag]} to ${user.username}`);
     }
 
-    // Helper: Notify blocked rank (DM + Channel visible alert)
-    async function notifyRankBlocked(gameName, emoji) {
-        const dmText = `⚠️ **عندك رانك ${gameName} بالفعل! | You already have a ${gameName} rank!**\n` +
-                       `شيل الرانك الحالي الأول من قناة الرانكات وبعدين اختار الجديد ${emoji}\n` +
-                       `Remove your current rank first, then pick a new one! ${emoji}`;
-        
-        // 1) Try sending in DM
-        try {
-            const fullUser = await client.users.fetch(user.id).catch(() => user);
-            await fullUser.send(dmText);
-            console.log(`✉️ Sent DM warning to ${user.username}`);
-        } catch (e) {
-            console.log(`ℹ️ Could not DM ${user.username} (DMs might be closed): ${e.message}`);
-        }
-
-        // 2) Send an instant 8-second temporary message in the channel directly
-        try {
-            const tempMsg = await reaction.message.channel.send(
-                `<@${user.id}> ⚠️ **عندك رانك ${gameName} بالفعل!** شيل الرانك القديم الأول ${emoji}`
-            );
-            setTimeout(() => tempMsg.delete().catch(() => {}), 8000);
-            console.log(`📢 Sent channel temporary warning for ${user.username}`);
-        } catch (err) {
-            console.error('Channel alert error:', err.message);
-        }
-    }
-
-    // Valo Ranks (single-select: one rank only)
+    // Valo Ranks (Auto-switch: Ensures strictly ONE rank at a time)
     if (msgId === VALO_MSG_ID && valoRankMap[emojiTag]) {
         const freshMember = await reaction.message.guild.members.fetch({ user: user.id, force: true }).catch(() => member);
-        const currentValoRank = Object.values(valoRankMap).find(roleId => freshMember.roles.cache.has(roleId));
-        if (currentValoRank && currentValoRank !== valoRankMap[emojiTag]) {
-            await reaction.users.remove(user.id).catch(() => {});
-            await notifyRankBlocked("Valorant", "🎮");
-            console.log(`🚫 Blocked ${user.username} from picking second Valo rank`);
-        } else if (!currentValoRank) {
-            await freshMember.roles.add(valoRankMap[emojiTag]).catch(() => {});
-            console.log(`🎯 Assigned Valo rank role to ${user.username}`);
+        const newRoleId = valoRankMap[emojiTag];
+        
+        // Remove any previous Valo ranks automatically
+        const oldRanks = Object.values(valoRankMap).filter(rid => rid !== newRoleId && freshMember.roles.cache.has(rid));
+        for (const oldRid of oldRanks) {
+            await freshMember.roles.remove(oldRid).catch(() => {});
         }
+        
+        // Assign the new rank role
+        await freshMember.roles.add(newRoleId).catch(() => {});
+        console.log(`🎯 [Valo Rank] Assigned to ${user.username} (Removed ${oldRanks.length} old ranks)`);
     }
 
-    // League Ranks (single-select: one rank only)
+    // League Ranks (Auto-switch: Ensures strictly ONE rank at a time)
     if (msgId === LEAGUE_MSG_ID && leagueRankMap[emojiTag]) {
         const freshMember = await reaction.message.guild.members.fetch({ user: user.id, force: true }).catch(() => member);
-        const currentLeagueRank = Object.values(leagueRankMap).find(roleId => freshMember.roles.cache.has(roleId));
-        if (currentLeagueRank && currentLeagueRank !== leagueRankMap[emojiTag]) {
-            await reaction.users.remove(user.id).catch(() => {});
-            await notifyRankBlocked("League of Legends", "⚔️");
-            console.log(`🚫 Blocked ${user.username} from picking second League rank`);
-        } else if (!currentLeagueRank) {
-            await freshMember.roles.add(leagueRankMap[emojiTag]).catch(() => {});
-            console.log(`⚔️ Assigned League rank role to ${user.username}`);
+        const newRoleId = leagueRankMap[emojiTag];
+        
+        // Remove any previous League ranks automatically
+        const oldRanks = Object.values(leagueRankMap).filter(rid => rid !== newRoleId && freshMember.roles.cache.has(rid));
+        for (const oldRid of oldRanks) {
+            await freshMember.roles.remove(oldRid).catch(() => {});
         }
+        
+        // Assign the new rank role
+        await freshMember.roles.add(newRoleId).catch(() => {});
+        console.log(`⚔️ [League Rank] Assigned to ${user.username} (Removed ${oldRanks.length} old ranks)`);
     }
 });
 
