@@ -82,33 +82,26 @@ function saveDb() {
     try { fs.writeFileSync(dbPath, JSON.stringify(rolesDb, null, 2), 'utf8'); } catch (e) {}
 }
 
-// Posted Clips DB — backed by GitHub so it survives ALL Replit resets
-const GH_TOKEN = process.env.GH_TOKEN;
-const GH_REPO  = 'maher-mohamed/mahercom-bot';
-const GH_FILE  = 'posted_clips.json';
-const GH_API   = `https://api.github.com/repos/${GH_REPO}/contents/${GH_FILE}`;
-const GH_HEADS = { Authorization: `token ${GH_TOKEN}`, 'Content-Type': 'application/json', 'User-Agent': 'TheVillageBot' };
-
+// Posted Clips DB — backed by Discord Channel History!
 let postedClips = new Set();
-let clipsFileSha = null;
 
-async function loadClipsFromGitHub() {
+async function loadClipsFromDiscord(client) {
     try {
-        const res = await axios.get(GH_API, { headers: GH_HEADS });
-        clipsFileSha = res.data.sha;
-        const arr = JSON.parse(Buffer.from(res.data.content, 'base64').toString('utf8'));
-        postedClips = new Set(arr);
-        console.log(`✅ Loaded ${postedClips.size} posted clips from GitHub`);
-    } catch (e) { console.log('ℹ️ No clips history on GitHub - starting fresh'); }
-}
-
-async function saveClipsDb() {
-    try {
-        const content = Buffer.from(JSON.stringify([...postedClips], null, 2)).toString('base64');
-        const body = { message: 'Update posted_clips', content, sha: clipsFileSha };
-        const res = await axios.put(GH_API, body, { headers: GH_HEADS });
-        clipsFileSha = res.data.content.sha;
-    } catch (e) { console.error('⚠️ Failed to save clips to GitHub:', e.message); }
+        const guild = client.guilds.cache.get(GUILD_ID);
+        if (!guild) return;
+        const channel = await guild.channels.fetch(CLIPS_CHANNEL_ID).catch(() => null);
+        if (!channel) return;
+        
+        const messages = await channel.messages.fetch({ limit: 100 });
+        for (const [id, msg] of messages) {
+            if (msg.author.id === client.user.id && msg.embeds.length > 0 && msg.embeds[0].url) {
+                const url = msg.embeds[0].url;
+                const match = url.match(/(?:clip\/|clips\.twitch\.tv\/)([^/?]+)/);
+                if (match) postedClips.add(match[1]);
+            }
+        }
+        console.log(`✅ Loaded ${postedClips.size} posted clips directly from Discord channel!`);
+    } catch (e) { console.error('⚠️ Failed to load clips from Discord:', e.message); }
 }
 
 // isLive persistence (survives restarts to avoid duplicate live alerts)
@@ -141,8 +134,8 @@ client.once('clientReady', async () => {
         }
     } catch (e) { console.error('Pre-fetch error:', e); }
 
-    // Load posted clips history from GitHub
-    await loadClipsFromGitHub();
+    // Load posted clips history directly from Discord Channel
+    await loadClipsFromDiscord(client);
 
     startTwitchMonitor();
 });
@@ -390,7 +383,6 @@ async function checkTwitch(manualChannel = null) {
                     const clip = edge.node;
                     if (!postedClips.has(clip.slug)) {
                         postedClips.add(clip.slug);
-                        saveClipsDb();
                         newClipsCount++;
                         const clipsChannel = guild.channels.cache.get(CLIPS_CHANNEL_ID);
                         if (clipsChannel) {
