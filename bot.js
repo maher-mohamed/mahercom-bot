@@ -140,10 +140,25 @@ client.on('guildMemberAdd', async (member) => {
     }
 });
 
-// Update sticky roles on member update
+// Save ALL roles when member LEAVES (for full restore on rejoin)
+client.on('guildMemberRemove', (member) => {
+    if (member.guild.id !== GUILD_ID || member.user.bot) return;
+    const allRoles = member.roles.cache
+        .filter(r => r.id !== member.guild.id) // exclude @everyone
+        .map(r => r.id);
+    if (allRoles.length > 0) {
+        rolesDb[member.id] = allRoles;
+        saveDb();
+        console.log(`💾 Saved ${allRoles.length} roles for ${member.user.username} on leave`);
+    }
+});
+
+// Update sticky roles on member update (role changes while in server)
 client.on('guildMemberUpdate', (oldMember, newMember) => {
     if (newMember.guild.id === GUILD_ID && !newMember.user.bot) {
-        rolesDb[newMember.id] = newMember.roles.cache.map(r => r.id);
+        rolesDb[newMember.id] = newMember.roles.cache
+            .filter(r => r.id !== newMember.guild.id)
+            .map(r => r.id);
         saveDb();
     }
 });
@@ -176,6 +191,37 @@ client.on('messageReactionAdd', async (reaction, user) => {
     if (msgId === LEAGUE_MSG_ID && leagueRankMap[emojiTag]) {
         await member.roles.add(leagueRankMap[emojiTag]).catch(() => {});
         console.log(`⚔️ Assigned League rank role to ${user.username}`);
+    }
+});
+
+// Reaction REMOVE Handler (Remove Role when reaction removed)
+client.on('messageReactionRemove', async (reaction, user) => {
+    if (user.bot) return;
+    if (reaction.partial) {
+        try { await reaction.fetch(); } catch (e) { return; }
+    }
+
+    const msgId = reaction.message.id;
+    const emojiTag = reaction.emoji.id ? `${reaction.emoji.name}:${reaction.emoji.id}` : reaction.emoji.name;
+    const member = await reaction.message.guild.members.fetch(user.id).catch(() => null);
+    if (!member) return;
+
+    // Pick Games
+    if (msgId === PICK_GAMES_MSG_ID && gameRoleMap[emojiTag]) {
+        await member.roles.remove(gameRoleMap[emojiTag]).catch(() => {});
+        console.log(`❌ Removed game role ${gameRoleMap[emojiTag]} from ${user.username}`);
+    }
+
+    // Valo Ranks
+    if (msgId === VALO_MSG_ID && valoRankMap[emojiTag]) {
+        await member.roles.remove(valoRankMap[emojiTag]).catch(() => {});
+        console.log(`❌ Removed Valo rank role from ${user.username}`);
+    }
+
+    // League Ranks
+    if (msgId === LEAGUE_MSG_ID && leagueRankMap[emojiTag]) {
+        await member.roles.remove(leagueRankMap[emojiTag]).catch(() => {});
+        console.log(`❌ Removed League rank role from ${user.username}`);
     }
 });
 
