@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -428,15 +428,35 @@ function startTwitchMonitor() {
     setInterval(() => checkTwitch(), 300000); // every 5 minutes
 }
 
-// Manual Check Command
+// Button Panel for Admin
 client.on('messageCreate', async (message) => {
     if (message.author.bot || message.guild?.id !== GUILD_ID) return;
-    if (message.content.trim() === '!clips') {
-        if (!message.member.permissions.has('Administrator')) {
-            return message.reply("❌ الأمر ده للإدارة بس يا صاحبي! 👀");
+    if (message.content.trim() === '!panel') {
+        if (!message.member.permissions.has('Administrator')) return;
+        
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('force_fetch_clips')
+                .setLabel('🔄 جلب الكليبات الجديدة')
+                .setStyle(ButtonStyle.Primary)
+        );
+
+        await message.channel.send({
+            content: 'لوحة التحكم السريعة للكليبات:',
+            components: [row]
+        });
+    }
+});
+
+// Handle Button Click
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton()) return;
+    if (interaction.customId === 'force_fetch_clips') {
+        if (!interaction.member.permissions.has('Administrator')) {
+            return interaction.reply({ content: '❌ للأدمن فقط!', ephemeral: true });
         }
-        await message.reply("🔄 ثواني بجيب آخر الكليبات من Twitch...");
-        await checkTwitch(message.channel);
+        await interaction.reply({ content: '🔄 جاري البحث عن كليبات جديدة من Twitch...', ephemeral: true });
+        await checkTwitch(interaction.channel);
     }
 });
 
