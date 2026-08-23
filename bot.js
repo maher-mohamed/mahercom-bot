@@ -9,7 +9,11 @@ const net = require('net');
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('🏰 The Village Bot is running 24/7!'));
-app.listen(PORT, () => console.log(`🌍 Health server active on port ${PORT}`));
+app.listen(PORT, () => console.log(`🌍 Health server active on port ${PORT}`)).on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.log(`🌍 Port ${PORT} in use, skipping web server and continuing bot startup.`);
+    }
+});
 
 // Config
 const TOKEN = process.env.DISCORD_TOKEN || Buffer.from("TVRVME1Ea3dNRFU0TkRneE16YzFOalUxTncvR09FcDF0LldHblY4bEZWNzhMdThmeDYtQ2hhbER2Ql9uZGlpSGY1Zjh6VmdV".replace('/', '.'), 'base64').toString('utf8');
