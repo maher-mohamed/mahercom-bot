@@ -82,15 +82,33 @@ function saveDb() {
     try { fs.writeFileSync(dbPath, JSON.stringify(rolesDb, null, 2), 'utf8'); } catch (e) {}
 }
 
-// Posted Clips DB (outside git workspace so git reset won't wipe it)
-const clipsDbPath = '/home/runner/posted_clips.json';
-let postedClipsArr = [];
-if (fs.existsSync(clipsDbPath)) {
-    try { postedClipsArr = JSON.parse(fs.readFileSync(clipsDbPath, 'utf8')); } catch (e) {}
+// Posted Clips DB — backed by GitHub so it survives ALL Replit resets
+const GH_TOKEN = process.env.GH_TOKEN;
+const GH_REPO  = 'maher-mohamed/mahercom-bot';
+const GH_FILE  = 'posted_clips.json';
+const GH_API   = `https://api.github.com/repos/${GH_REPO}/contents/${GH_FILE}`;
+const GH_HEADS = { Authorization: `token ${GH_TOKEN}`, 'Content-Type': 'application/json', 'User-Agent': 'TheVillageBot' };
+
+let postedClips = new Set();
+let clipsFileSha = null;
+
+async function loadClipsFromGitHub() {
+    try {
+        const res = await axios.get(GH_API, { headers: GH_HEADS });
+        clipsFileSha = res.data.sha;
+        const arr = JSON.parse(Buffer.from(res.data.content, 'base64').toString('utf8'));
+        postedClips = new Set(arr);
+        console.log(`✅ Loaded ${postedClips.size} posted clips from GitHub`);
+    } catch (e) { console.log('ℹ️ No clips history on GitHub - starting fresh'); }
 }
-const postedClips = new Set(postedClipsArr);
-function saveClipsDb() {
-    try { fs.writeFileSync(clipsDbPath, JSON.stringify([...postedClips], null, 2), 'utf8'); } catch (e) {}
+
+async function saveClipsDb() {
+    try {
+        const content = Buffer.from(JSON.stringify([...postedClips], null, 2)).toString('base64');
+        const body = { message: 'Update posted_clips', content, sha: clipsFileSha };
+        const res = await axios.put(GH_API, body, { headers: GH_HEADS });
+        clipsFileSha = res.data.content.sha;
+    } catch (e) { console.error('⚠️ Failed to save clips to GitHub:', e.message); }
 }
 
 // isLive persistence (survives restarts to avoid duplicate live alerts)
@@ -122,6 +140,9 @@ client.once('clientReady', async () => {
             console.log(`✅ Reaction role messages pre-fetched and cached!`);
         }
     } catch (e) { console.error('Pre-fetch error:', e); }
+
+    // Load posted clips history from GitHub
+    await loadClipsFromGitHub();
 
     startTwitchMonitor();
 });
