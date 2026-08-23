@@ -193,6 +193,9 @@ client.on('guildMemberUpdate', (oldMember, newMember) => {
     }
 });
 
+// Tracks reactions removed by the bot (to avoid false role removal in messageReactionRemove)
+const botManagedRemovals = new Set();
+
 // Reaction Add Handler (Instant Role Assignment)
 client.on('messageReactionAdd', async (reaction, user) => {
     if (user.bot) return;
@@ -223,11 +226,17 @@ client.on('messageReactionAdd', async (reaction, user) => {
         }
         
         // Remove old Valo rank REACTIONS from the message (visual cleanup)
+        // Mark them as bot-managed so messageReactionRemove ignores them
         for (const oldEmojiKey of Object.keys(valoRankMap)) {
             if (oldEmojiKey === emojiTag) continue;
             const oldEmojiId = oldEmojiKey.split(':')[1];
+            const removalKey = `${user.id}-${oldEmojiId}`;
             const oldReaction = reaction.message.reactions.cache.get(oldEmojiId);
-            if (oldReaction) await oldReaction.users.remove(user.id).catch(() => {});
+            if (oldReaction) {
+                botManagedRemovals.add(removalKey);
+                await oldReaction.users.remove(user.id).catch(() => {});
+                setTimeout(() => botManagedRemovals.delete(removalKey), 3000);
+            }
         }
 
         // Assign the new rank role
@@ -247,11 +256,17 @@ client.on('messageReactionAdd', async (reaction, user) => {
         }
         
         // Remove old League rank REACTIONS from the message (visual cleanup)
+        // Mark them as bot-managed so messageReactionRemove ignores them
         for (const oldEmojiKey of Object.keys(leagueRankMap)) {
             if (oldEmojiKey === emojiTag) continue;
             const oldEmojiId = oldEmojiKey.split(':')[1];
+            const removalKey = `${user.id}-${oldEmojiId}`;
             const oldReaction = reaction.message.reactions.cache.get(oldEmojiId);
-            if (oldReaction) await oldReaction.users.remove(user.id).catch(() => {});
+            if (oldReaction) {
+                botManagedRemovals.add(removalKey);
+                await oldReaction.users.remove(user.id).catch(() => {});
+                setTimeout(() => botManagedRemovals.delete(removalKey), 3000);
+            }
         }
 
         // Assign the new rank role
@@ -270,6 +285,12 @@ client.on('messageReactionRemove', async (reaction, user) => {
 
     const msgId = reaction.message.id;
     const emojiTag = reaction.emoji.id ? `${reaction.emoji.name}:${reaction.emoji.id}` : reaction.emoji.name;
+    const emojiId = reaction.emoji.id || reaction.emoji.name;
+
+    // Skip if this removal was triggered by the bot itself (rank auto-switch cleanup)
+    const removalKey = `${user.id}-${emojiId}`;
+    if (botManagedRemovals.has(removalKey)) return;
+
     const member = await reaction.message.guild.members.fetch(user.id).catch(() => null);
     if (!member) return;
 
