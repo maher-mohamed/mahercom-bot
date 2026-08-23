@@ -94,7 +94,7 @@ try { if (fs.existsSync(isLivePath)) isLive = JSON.parse(fs.readFileSync(isLiveP
 function saveIsLive(val) { try { fs.writeFileSync(isLivePath, JSON.stringify({ isLive: val })); } catch(e) {} }
 
 // Client Ready
-client.once('ready', async () => {
+client.once('clientReady', async () => {
     console.log(`=================================================================`);
     console.log(`🏰 THE VILLAGE BOT (NODE.JS 24/7 CLOUD ENGINE) IS LIVE!`);
     console.log(`Logged in as: ${client.user.tag}`);
