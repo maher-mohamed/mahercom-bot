@@ -82,8 +82,8 @@ function saveDb() {
     try { fs.writeFileSync(dbPath, JSON.stringify(rolesDb, null, 2), 'utf8'); } catch (e) {}
 }
 
-// Posted Clips DB (persisted to file so bot doesn't re-post after restart)
-const clipsDbPath = path.join(__dirname, 'posted_clips.json');
+// Posted Clips DB (outside git workspace so git reset won't wipe it)
+const clipsDbPath = '/home/runner/posted_clips.json';
 let postedClipsArr = [];
 if (fs.existsSync(clipsDbPath)) {
     try { postedClipsArr = JSON.parse(fs.readFileSync(clipsDbPath, 'utf8')); } catch (e) {}
