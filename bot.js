@@ -213,9 +213,9 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
     // Valo Ranks (single-select: one rank only)
     if (msgId === VALO_MSG_ID && valoRankMap[emojiTag]) {
-        const currentValoRank = Object.values(valoRankMap).find(roleId => member.roles.cache.has(roleId));
+        const freshMember = await reaction.message.guild.members.fetch({ user: user.id, force: true }).catch(() => member);
+        const currentValoRank = Object.values(valoRankMap).find(roleId => freshMember.roles.cache.has(roleId));
         if (currentValoRank) {
-            // Already has a rank - remove the new reaction and DM them
             await reaction.users.remove(user.id).catch(() => {});
             await user.send(
                 `⚠️ **عندك رانك Valorant بالفعل!**\n` +
@@ -223,16 +223,16 @@ client.on('messageReactionAdd', async (reaction, user) => {
             ).catch(() => {});
             console.log(`🚫 Blocked ${user.username} from picking second Valo rank`);
         } else {
-            await member.roles.add(valoRankMap[emojiTag]).catch(() => {});
+            await freshMember.roles.add(valoRankMap[emojiTag]).catch(() => {});
             console.log(`🎯 Assigned Valo rank role to ${user.username}`);
         }
     }
 
     // League Ranks (single-select: one rank only)
     if (msgId === LEAGUE_MSG_ID && leagueRankMap[emojiTag]) {
-        const currentLeagueRank = Object.values(leagueRankMap).find(roleId => member.roles.cache.has(roleId));
+        const freshMember = await reaction.message.guild.members.fetch({ user: user.id, force: true }).catch(() => member);
+        const currentLeagueRank = Object.values(leagueRankMap).find(roleId => freshMember.roles.cache.has(roleId));
         if (currentLeagueRank) {
-            // Already has a rank - remove the new reaction and DM them
             await reaction.users.remove(user.id).catch(() => {});
             await user.send(
                 `⚠️ **عندك رانك League of Legends بالفعل!**\n` +
@@ -240,7 +240,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
             ).catch(() => {});
             console.log(`🚫 Blocked ${user.username} from picking second League rank`);
         } else {
-            await member.roles.add(leagueRankMap[emojiTag]).catch(() => {});
+            await freshMember.roles.add(leagueRankMap[emojiTag]).catch(() => {});
             console.log(`⚔️ Assigned League rank role to ${user.username}`);
         }
     }
