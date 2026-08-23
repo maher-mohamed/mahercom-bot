@@ -208,19 +208,33 @@ client.on('messageReactionAdd', async (reaction, user) => {
         console.log(`🎯 Assigned game role ${gameRoleMap[emojiTag]} to ${user.username}`);
     }
 
+    // Helper: Notify blocked rank (DM with channel fallback if DMs are closed)
+    async function notifyRankBlocked(gameName, emoji) {
+        const dmText = `⚠️ **عندك رانك ${gameName} بالفعل! | You already have a ${gameName} rank!**\n` +
+                       `شيل الرانك الحالي الأول وبعدين اختار الجديد ${emoji}\n` +
+                       `Remove your current rank first, then pick a new one! ${emoji}`;
+        try {
+            await user.send(dmText);
+        } catch (e) {
+            // If DM is closed in user settings, send a temporary 6-second message in the channel
+            try {
+                const tempMsg = await reaction.message.channel.send(
+                    `<@${user.id}> ⚠️ **عندك رانك ${gameName} بالفعل!** شيل الرانك القديم الأول ${emoji}`
+                );
+                setTimeout(() => tempMsg.delete().catch(() => {}), 6000);
+            } catch (err) {}
+        }
+    }
+
     // Valo Ranks (single-select: one rank only)
     if (msgId === VALO_MSG_ID && valoRankMap[emojiTag]) {
         const freshMember = await reaction.message.guild.members.fetch({ user: user.id, force: true }).catch(() => member);
         const currentValoRank = Object.values(valoRankMap).find(roleId => freshMember.roles.cache.has(roleId));
-        if (currentValoRank) {
+        if (currentValoRank && currentValoRank !== valoRankMap[emojiTag]) {
             await reaction.users.remove(user.id).catch(() => {});
-            await user.send(
-                `⚠️ **عندك رانك Valorant بالفعل! | You already have a Valorant rank!**\n` +
-                `شيل الرانك الحالي الأول وبعدين اختار الجديد 🎮\n` +
-                `Remove your current rank first, then pick a new one! 🎮`
-            ).catch(() => {});
+            await notifyRankBlocked("Valorant", "🎮");
             console.log(`🚫 Blocked ${user.username} from picking second Valo rank`);
-        } else {
+        } else if (!currentValoRank) {
             await freshMember.roles.add(valoRankMap[emojiTag]).catch(() => {});
             console.log(`🎯 Assigned Valo rank role to ${user.username}`);
         }
@@ -230,15 +244,11 @@ client.on('messageReactionAdd', async (reaction, user) => {
     if (msgId === LEAGUE_MSG_ID && leagueRankMap[emojiTag]) {
         const freshMember = await reaction.message.guild.members.fetch({ user: user.id, force: true }).catch(() => member);
         const currentLeagueRank = Object.values(leagueRankMap).find(roleId => freshMember.roles.cache.has(roleId));
-        if (currentLeagueRank) {
+        if (currentLeagueRank && currentLeagueRank !== leagueRankMap[emojiTag]) {
             await reaction.users.remove(user.id).catch(() => {});
-            await user.send(
-                `⚠️ **عندك رانك League of Legends بالفعل! | You already have a League rank!**\n` +
-                `شيل الرانك الحالي الأول وبعدين اختار الجديد ⚔️\n` +
-                `Remove your current rank first, then pick a new one! ⚔️`
-            ).catch(() => {});
+            await notifyRankBlocked("League of Legends", "⚔️");
             console.log(`🚫 Blocked ${user.username} from picking second League rank`);
-        } else {
+        } else if (!currentLeagueRank) {
             await freshMember.roles.add(leagueRankMap[emojiTag]).catch(() => {});
             console.log(`⚔️ Assigned League rank role to ${user.username}`);
         }
