@@ -3,6 +3,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
+const net = require('net');
 
 // Express server for 24/7 Cloud pinging
 const app = express();
@@ -113,6 +114,7 @@ client.once('clientReady', async () => {
     } catch (e) { console.error('Pre-fetch error:', e); }
 
     startTwitchMonitor();
+    connectTwitchChat();
 });
 
 
@@ -341,6 +343,123 @@ async function checkTwitchLive() {
 
 function startTwitchMonitor() {
     setInterval(() => checkTwitchLive(), 300000); // Check live status every 5 minutes
+}
+
+// Fetch Clip Info from Twitch GQL by Slug
+async function getClipBySlug(slug) {
+    const query = {
+        query: `
+        query {
+          clip(slug: "${slug}") {
+            id
+            slug
+            title
+            url
+            durationSeconds
+            thumbnailURL
+            curator { displayName }
+          }
+        }`
+    };
+    const res = await axios.post('https://gql.twitch.tv/gql', query, {
+        headers: {
+            'Client-ID': 'kimne78kx3ncx6brgo4mv6wki5h1ko',
+            'Content-Type': 'application/json'
+        }
+    });
+    return res.data?.data?.clip;
+}
+
+// Helper: Build and Send Clip Embed to Discord Channel
+async function publishClipToChannel(clip) {
+    const guild = client.guilds.cache.get(GUILD_ID);
+    if (!guild) return;
+    const clipsChannel = guild.channels.cache.get(CLIPS_CHANNEL_ID) || await guild.channels.fetch(CLIPS_CHANNEL_ID).catch(() => null);
+    if (!clipsChannel) return;
+
+    const clipEmbed = new EmbedBuilder()
+        .setTitle(`🎥 ${clip.title}`)
+        .setURL(clip.url)
+        .setColor(0x0099FF)
+        .addFields(
+            { name: '👤 Clipped By', value: clip.curator?.displayName || 'Viewer', inline: true },
+            { name: '⏱️ Duration', value: `${clip.durationSeconds}s`, inline: true }
+        )
+        .setImage(clip.thumbnailURL)
+        .setFooter({ text: 'The Village Clips • Mahercom (Twitch Chat 💬)' })
+        .setTimestamp();
+
+    await clipsChannel.send({
+        content: `🎬 **New Clip from Mahercom's Stream!**\n${clip.url}`,
+        embeds: [clipEmbed]
+    });
+    console.log(`🚀 [Twitch Chat] Successfully published clip: ${clip.title} (${clip.slug})`);
+}
+
+// Twitch Chat (IRC) Real-time Listener
+const recentChatClips = new Set();
+
+function connectTwitchChat() {
+    console.log(`📡 Connecting to Twitch Chat (#${STREAMER})...`);
+    const socket = new net.Socket();
+
+    socket.connect(6667, 'irc.chat.twitch.tv', () => {
+        console.log(`✅ Connected to Twitch Chat! Listening for clips in #${STREAMER}...`);
+        socket.write('PASS justinfan12345\r\n');
+        socket.write('NICK justinfan12345\r\n');
+        socket.write(`JOIN #${STREAMER}\r\n`);
+    });
+
+    socket.on('data', async (data) => {
+        const lines = data.toString().split('\r\n');
+        for (const line of lines) {
+            if (!line) continue;
+            
+            // Keep-alive ping/pong
+            if (line.startsWith('PING')) {
+                socket.write('PONG :tmi.twitch.tv\r\n');
+                continue;
+            }
+
+            // Chat message
+            if (line.includes(`PRIVMSG #${STREAMER} :`)) {
+                const parts = line.split(`PRIVMSG #${STREAMER} :`);
+                const messageText = parts.slice(1).join(`PRIVMSG #${STREAMER} :`);
+                
+                // Detect Twitch clip link
+                const match = messageText.match(/https?:\/\/(?:www\.)?(?:clips\.twitch\.tv\/[^\s]+|twitch\.tv\/[a-zA-Z0-9_]+\/clip\/[^\s]+)/i);
+                if (match) {
+                    const rawUrl = match[0];
+                    const slugMatch = rawUrl.match(/(?:clip\/|clips\.twitch\.tv\/)([^/?#\s]+)/);
+                    const slug = slugMatch ? slugMatch[1] : null;
+
+                    if (slug && !recentChatClips.has(slug)) {
+                        recentChatClips.add(slug);
+                        setTimeout(() => recentChatClips.delete(slug), 10 * 60 * 1000); // 10 min de-duplication
+
+                        console.log(`🎯 [Twitch Chat] Detected clip link: ${rawUrl}`);
+                        try {
+                            const clip = await getClipBySlug(slug);
+                            if (clip) {
+                                await publishClipToChannel(clip);
+                            }
+                        } catch (err) {
+                            console.error('Error handling chat clip:', err.message);
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    socket.on('close', () => {
+        console.log('⚠️ Twitch chat disconnected. Reconnecting in 5 seconds...');
+        setTimeout(connectTwitchChat, 5000);
+    });
+
+    socket.on('error', (err) => {
+        console.error('Twitch chat socket error:', err.message);
+    });
 }
 
 // Start
