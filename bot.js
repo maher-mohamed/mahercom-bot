@@ -193,9 +193,6 @@ client.on('guildMemberUpdate', (oldMember, newMember) => {
     }
 });
 
-// Tracks reactions removed by the bot (to avoid false role removal in messageReactionRemove)
-const botManagedRemovals = new Set();
-
 // Reaction Add Handler (Instant Role Assignment)
 client.on('messageReactionAdd', async (reaction, user) => {
     if (user.bot) return;
@@ -214,69 +211,37 @@ client.on('messageReactionAdd', async (reaction, user) => {
         console.log(`🎯 Assigned game role ${gameRoleMap[emojiTag]} to ${user.username}`);
     }
 
-    // Valo Ranks (Auto-switch: Ensures strictly ONE rank at a time)
+    // Valo Ranks (Auto-switch: ONE rank role at a time, instant)
     if (msgId === VALO_MSG_ID && valoRankMap[emojiTag]) {
         const freshMember = await reaction.message.guild.members.fetch({ user: user.id, force: true }).catch(() => member);
         const newRoleId = valoRankMap[emojiTag];
-        
-        // Remove any previous Valo rank ROLES automatically
-        const oldRanks = Object.values(valoRankMap).filter(rid => rid !== newRoleId && freshMember.roles.cache.has(rid));
-        for (const oldRid of oldRanks) {
-            await freshMember.roles.remove(oldRid).catch(() => {});
-        }
-        
-        // Remove old Valo rank REACTIONS from the message (visual cleanup)
-        // Mark them as bot-managed so messageReactionRemove ignores them
-        for (const oldEmojiKey of Object.keys(valoRankMap)) {
-            if (oldEmojiKey === emojiTag) continue;
-            const oldEmojiId = oldEmojiKey.split(':')[1];
-            const removalKey = `${user.id}-${oldEmojiId}`;
-            const oldReaction = reaction.message.reactions.cache.get(oldEmojiId);
-            if (oldReaction) {
-                botManagedRemovals.add(removalKey);
-                await oldReaction.users.remove(user.id).catch(() => {});
-                setTimeout(() => botManagedRemovals.delete(removalKey), 3000);
-            }
-        }
-
-        // Assign the new rank role
+        // Remove all other Valo rank roles instantly
+        const removes = Object.values(valoRankMap)
+            .filter(rid => rid !== newRoleId && freshMember.roles.cache.has(rid))
+            .map(rid => freshMember.roles.remove(rid).catch(() => {}));
+        await Promise.all(removes);
+        // Add new rank role
         await freshMember.roles.add(newRoleId).catch(() => {});
-        console.log(`🎯 [Valo Rank] Assigned to ${user.username} (Removed ${oldRanks.length} old ranks)`);
+        console.log(`🎯 [Valo Rank] ${user.username} → rank updated instantly`);
     }
 
-    // League Ranks (Auto-switch: Ensures strictly ONE rank at a time)
+    // League Ranks (Auto-switch: ONE rank role at a time, instant)
     if (msgId === LEAGUE_MSG_ID && leagueRankMap[emojiTag]) {
         const freshMember = await reaction.message.guild.members.fetch({ user: user.id, force: true }).catch(() => member);
         const newRoleId = leagueRankMap[emojiTag];
-        
-        // Remove any previous League rank ROLES automatically
-        const oldRanks = Object.values(leagueRankMap).filter(rid => rid !== newRoleId && freshMember.roles.cache.has(rid));
-        for (const oldRid of oldRanks) {
-            await freshMember.roles.remove(oldRid).catch(() => {});
-        }
-        
-        // Remove old League rank REACTIONS from the message (visual cleanup)
-        // Mark them as bot-managed so messageReactionRemove ignores them
-        for (const oldEmojiKey of Object.keys(leagueRankMap)) {
-            if (oldEmojiKey === emojiTag) continue;
-            const oldEmojiId = oldEmojiKey.split(':')[1];
-            const removalKey = `${user.id}-${oldEmojiId}`;
-            const oldReaction = reaction.message.reactions.cache.get(oldEmojiId);
-            if (oldReaction) {
-                botManagedRemovals.add(removalKey);
-                await oldReaction.users.remove(user.id).catch(() => {});
-                setTimeout(() => botManagedRemovals.delete(removalKey), 3000);
-            }
-        }
-
-        // Assign the new rank role
+        // Remove all other League rank roles instantly
+        const removes = Object.values(leagueRankMap)
+            .filter(rid => rid !== newRoleId && freshMember.roles.cache.has(rid))
+            .map(rid => freshMember.roles.remove(rid).catch(() => {}));
+        await Promise.all(removes);
+        // Add new rank role
         await freshMember.roles.add(newRoleId).catch(() => {});
-        console.log(`⚔️ [League Rank] Assigned to ${user.username} (Removed ${oldRanks.length} old ranks)`);
+        console.log(`⚔️ [League Rank] ${user.username} → rank updated instantly`);
     }
 });
 
 
-// Reaction REMOVE Handler (Remove Role when reaction removed)
+// Reaction REMOVE Handler (Remove Role when user manually removes their reaction)
 client.on('messageReactionRemove', async (reaction, user) => {
     if (user.bot) return;
     if (reaction.partial) {
@@ -285,12 +250,6 @@ client.on('messageReactionRemove', async (reaction, user) => {
 
     const msgId = reaction.message.id;
     const emojiTag = reaction.emoji.id ? `${reaction.emoji.name}:${reaction.emoji.id}` : reaction.emoji.name;
-    const emojiId = reaction.emoji.id || reaction.emoji.name;
-
-    // Skip if this removal was triggered by the bot itself (rank auto-switch cleanup)
-    const removalKey = `${user.id}-${emojiId}`;
-    if (botManagedRemovals.has(removalKey)) return;
-
     const member = await reaction.message.guild.members.fetch(user.id).catch(() => null);
     if (!member) return;
 
