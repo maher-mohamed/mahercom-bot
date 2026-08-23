@@ -82,28 +82,6 @@ function saveDb() {
     try { fs.writeFileSync(dbPath, JSON.stringify(rolesDb, null, 2), 'utf8'); } catch (e) {}
 }
 
-// Posted Clips DB — backed by Discord Channel History!
-let postedClips = new Set();
-
-async function loadClipsFromDiscord(client) {
-    try {
-        const guild = client.guilds.cache.get(GUILD_ID);
-        if (!guild) return;
-        const channel = await guild.channels.fetch(CLIPS_CHANNEL_ID).catch(() => null);
-        if (!channel) return;
-        
-        const messages = await channel.messages.fetch({ limit: 100 });
-        for (const [id, msg] of messages) {
-            if (msg.author.id === client.user.id && msg.embeds.length > 0 && msg.embeds[0].url) {
-                const url = msg.embeds[0].url;
-                const match = url.match(/(?:clip\/|clips\.twitch\.tv\/)([^/?]+)/);
-                if (match) postedClips.add(match[1]);
-            }
-        }
-        console.log(`✅ Loaded ${postedClips.size} posted clips directly from Discord channel!`);
-    } catch (e) { console.error('⚠️ Failed to load clips from Discord:', e.message); }
-}
-
 // isLive persistence (survives restarts to avoid duplicate live alerts)
 const isLivePath = '/home/runner/islive.json';
 let isLive = false;
@@ -133,9 +111,6 @@ client.once('clientReady', async () => {
             console.log(`✅ Reaction role messages pre-fetched and cached!`);
         }
     } catch (e) { console.error('Pre-fetch error:', e); }
-
-    // Load posted clips history directly from Discord Channel
-    await loadClipsFromDiscord(client);
 
     startTwitchMonitor();
 });
@@ -300,155 +275,154 @@ client.on('messageReactionRemove', async (reaction, user) => {
     }
 });
 
-// Twitch Live & Clips Engine
-
-async function checkTwitch(manualChannel = null) {
+// Twitch Live Engine
+async function checkTwitchLive() {
     try {
-            const query = {
-                query: `
-                query {
-                  user(login: "${STREAMER}") {
-                    id
-                    login
-                    displayName
-                    stream {
-                      id
-                      title
-                      game { name }
-                      viewersCount
-                      previewImageURL(width: 1280, height: 720)
-                    }
-                    clips(first: 20, criteria: { filter: LAST_WEEK }) {
-                      edges {
-                        node {
-                          id
-                          slug
-                          title
-                          url
-                          durationSeconds
-                          thumbnailURL
-                          curator { displayName }
-                        }
-                      }
-                    }
-                  }
-                }`
-            };
-
-            const res = await axios.post('https://gql.twitch.tv/gql', query, {
-                headers: {
-                    'Client-ID': 'kimne78kx3ncx6brgo4mv6wki5h1ko',
-                    'Content-Type': 'application/json'
+        const query = {
+            query: `
+            query {
+              user(login: "${STREAMER}") {
+                id
+                login
+                displayName
+                stream {
+                  id
+                  title
+                  game { name }
+                  viewersCount
+                  previewImageURL(width: 1280, height: 720)
                 }
-            });
+              }
+            }`
+        };
 
-            const user = res.data?.data?.user;
-            if (!user) return;
-
-            const guild = client.guilds.cache.get(GUILD_ID);
-            if (!guild) return;
-
-            // Live Alert
-            if (user.stream && !isLive) {
-                isLive = true;
-                saveIsLive(true);
-                const annChannel = guild.channels.cache.get(ANNOUNCEMENTS_CHANNEL_ID);
-                if (annChannel) {
-                    const liveEmbed = new EmbedBuilder()
-                        .setTitle(user.stream.title || 'Live Stream')
-                        .setURL(`https://www.twitch.tv/${STREAMER}`)
-                        .setColor(0x0099FF)
-                        .addFields(
-                            { name: '🎮 Playing', value: user.stream.game?.name || 'Just Chatting', inline: true },
-                            { name: '👀 Viewers', value: `${user.stream.viewersCount}`, inline: true }
-                        )
-                        .setImage(`${user.stream.previewImageURL}?r=${Date.now()}`)
-                        .setFooter({ text: 'The Village Live Alerts • Twitch Stream' })
-                        .setTimestamp();
-
-                    await annChannel.send({
-                        content: `@everyone 🚀 Going live now! Grab your snacks and hop in:\nhttps://www.twitch.tv/${STREAMER}`,
-                        embeds: [liveEmbed]
-                    });
-                }
-            } else if (!user.stream && isLive) {
-                isLive = false;
-                saveIsLive(false);
+        const res = await axios.post('https://gql.twitch.tv/gql', query, {
+            headers: {
+                'Client-ID': 'kimne78kx3ncx6brgo4mv6wki5h1ko',
+                'Content-Type': 'application/json'
             }
+        });
 
-            // Clips
-            let newClipsCount = 0;
-            if (user.clips?.edges) {
-                for (const edge of user.clips.edges) {
-                    const clip = edge.node;
-                    if (!postedClips.has(clip.slug)) {
-                        postedClips.add(clip.slug);
-                        newClipsCount++;
-                        const clipsChannel = guild.channels.cache.get(CLIPS_CHANNEL_ID);
-                        if (clipsChannel) {
-                            const clipEmbed = new EmbedBuilder()
-                                .setTitle(`🎥 ${clip.title}`)
-                                .setURL(clip.url)
-                                .setColor(0x0099FF)
-                                .addFields(
-                                    { name: '👤 Clipped By', value: clip.curator?.displayName || 'Viewer', inline: true },
-                                    { name: '⏱️ Duration', value: `${clip.durationSeconds}s`, inline: true }
-                                )
-                                .setImage(clip.thumbnailURL)
-                                .setFooter({ text: 'The Village Clips • Mahercom' })
-                                .setTimestamp();
+        const user = res.data?.data?.user;
+        if (!user) return;
 
-                            await clipsChannel.send({
-                                content: `🎬 **New Clip from Mahercom's Stream!**\n${clip.url}`,
-                                embeds: [clipEmbed]
-                            });
-                        }
-                    }
-                }
+        const guild = client.guilds.cache.get(GUILD_ID);
+        if (!guild) return;
+
+        // Live Alert
+        if (user.stream && !isLive) {
+            isLive = true;
+            saveIsLive(true);
+            const annChannel = guild.channels.cache.get(ANNOUNCEMENTS_CHANNEL_ID);
+            if (annChannel) {
+                const liveEmbed = new EmbedBuilder()
+                    .setTitle(user.stream.title || 'Live Stream')
+                    .setURL(`https://www.twitch.tv/${STREAMER}`)
+                    .setColor(0x0099FF)
+                    .addFields(
+                        { name: '🎮 Playing', value: user.stream.game?.name || 'Just Chatting', inline: true },
+                        { name: '👀 Viewers', value: `${user.stream.viewersCount}`, inline: true }
+                    )
+                    .setImage(`${user.stream.previewImageURL}?r=${Date.now()}`)
+                    .setFooter({ text: 'The Village Live Alerts • Twitch Stream' })
+                    .setTimestamp();
+
+                await annChannel.send({
+                    content: `@everyone 🚀 Going live now! Grab your snacks and hop in:\nhttps://www.twitch.tv/${STREAMER}`,
+                    embeds: [liveEmbed]
+                });
             }
-
-            if (manualChannel) {
-                if (newClipsCount > 0) await manualChannel.send(`✅ تم العثور على **${newClipsCount}** كليبات جديدة وتم إرسالهم في قناة الكليبات! 🎬`);
-                else await manualChannel.send(`ℹ️ بحثت، بس مفيش كليبات جديدة نزلت في آخر فترة. 🤷‍♂️`);
-            }
-        } catch (e) {
-            if (manualChannel) await manualChannel.send(`❌ حصل مشكلة في الاتصال بـ Twitch: ${e.message}`);
+        } else if (!user.stream && isLive) {
+            isLive = false;
+            saveIsLive(false);
         }
+    } catch (e) {}
 }
 
 function startTwitchMonitor() {
-    setInterval(() => checkTwitch(), 300000); // every 5 minutes
+    setInterval(() => checkTwitchLive(), 300000); // Check live status every 5 minutes
 }
 
-// Button Panel for Admin
+// Fetch Clip Info from Twitch GQL by Slug
+async function getClipBySlug(slug) {
+    const query = {
+        query: `
+        query {
+          clip(slug: "${slug}") {
+            id
+            slug
+            title
+            url
+            durationSeconds
+            thumbnailURL
+            curator { displayName }
+          }
+        }`
+    };
+    const res = await axios.post('https://gql.twitch.tv/gql', query, {
+        headers: {
+            'Client-ID': 'kimne78kx3ncx6brgo4mv6wki5h1ko',
+            'Content-Type': 'application/json'
+        }
+    });
+    return res.data?.data?.clip;
+}
+
+// Manual Clip Poster Command: !clip <link> or !كليب <link>
 client.on('messageCreate', async (message) => {
     if (message.author.bot || message.guild?.id !== GUILD_ID) return;
-    if (message.content.trim() === '!panel') {
-        if (!message.member.permissions.has('Administrator')) return;
-        
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('force_fetch_clips')
-                .setLabel('🔄 جلب الكليبات الجديدة')
-                .setStyle(ButtonStyle.Primary)
-        );
-
-        await message.channel.send({
-            content: 'لوحة التحكم السريعة للكليبات:',
-            components: [row]
-        });
-    }
-});
-
-// Handle Button Click
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isButton()) return;
-    if (interaction.customId === 'force_fetch_clips') {
-        if (!interaction.member.permissions.has('Administrator')) {
-            return interaction.reply({ content: '❌ للأدمن فقط!', ephemeral: true });
+    
+    const args = message.content.trim().split(/\s+/);
+    const cmd = args[0]?.toLowerCase();
+    
+    if (cmd === '!clip' || cmd === '!كليب') {
+        if (!message.member.permissions.has('Administrator')) {
+            return message.reply("❌ هذا الأمر مخصص للإدارة فقط! 👀");
         }
-        await interaction.reply({ content: '🔄 جاري البحث عن كليبات جديدة من Twitch...', ephemeral: true });
-        await checkTwitch(interaction.channel);
+        
+        const clipUrl = args[1];
+        if (!clipUrl) {
+            return message.reply("⚠️ **يرجى كتابة رابط الكليب بعد الأمر!**\nمثال:\n`!clip https://clips.twitch.tv/YourClipSlug`");
+        }
+        
+        const match = clipUrl.match(/(?:clip\/|clips\.twitch\.tv\/)([^/?#\s]+)/);
+        const slug = match ? match[1] : clipUrl.trim();
+        
+        const progressMsg = await message.reply("🔄 **جاري جلب بيانات الكليب وتجهيز الرسالة...**");
+        
+        try {
+            const clip = await getClipBySlug(slug);
+            if (!clip) {
+                return progressMsg.edit("❌ **تعذر العثور على الكليب في Twitch!** تأكد من صحة الرابط.");
+            }
+            
+            const clipsChannel = message.guild.channels.cache.get(CLIPS_CHANNEL_ID) || await message.guild.channels.fetch(CLIPS_CHANNEL_ID).catch(() => null);
+            if (!clipsChannel) {
+                return progressMsg.edit("❌ **تعذر العثور على قناة الكليبات في السيرفر!**");
+            }
+            
+            const clipEmbed = new EmbedBuilder()
+                .setTitle(`🎥 ${clip.title}`)
+                .setURL(clip.url)
+                .setColor(0x0099FF)
+                .addFields(
+                    { name: '👤 Clipped By', value: clip.curator?.displayName || 'Viewer', inline: true },
+                    { name: '⏱️ Duration', value: `${clip.durationSeconds}s`, inline: true }
+                )
+                .setImage(clip.thumbnailURL)
+                .setFooter({ text: 'The Village Clips • Mahercom' })
+                .setTimestamp();
+
+            await clipsChannel.send({
+                content: `🎬 **New Clip from Mahercom's Stream!**\n${clip.url}`,
+                embeds: [clipEmbed]
+            });
+            
+            await progressMsg.edit(`✅ **تم نشر الكليب بنجاح في <#${CLIPS_CHANNEL_ID}>!** 🚀💙`);
+        } catch (err) {
+            console.error('Error posting clip manually:', err);
+            await progressMsg.edit(`❌ **حدث خطأ أثناء معالجة الكليب:** ${err.message}`);
+        }
     }
 });
 
