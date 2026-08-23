@@ -1,4 +1,4 @@
-run = "node bot.js"
+run = "npm install --silent && node bot.js"
 entrypoint = "bot.js"
 
 [nix]
@@ -7,6 +7,3 @@ channel = "stable-23_05"
 [deployment]
 run = ["sh", "-c", "npm install --silent && node bot.js"]
 deploymentTarget = "cloudrun"
-
-[env]
-NODE_ENV = "production"
