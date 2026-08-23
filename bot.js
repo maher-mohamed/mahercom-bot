@@ -72,8 +72,8 @@ const client = new Client({
     partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User, Partials.GuildMember]
 });
 
-// Sticky Roles DB
-const dbPath = path.join(__dirname, 'member_roles_db.json');
+// Sticky Roles DB (outside git workspace so git reset won't wipe it)
+const dbPath = '/home/runner/member_roles_db.json';
 let rolesDb = {};
 if (fs.existsSync(dbPath)) {
     try { rolesDb = JSON.parse(fs.readFileSync(dbPath, 'utf8')); } catch (e) {}
@@ -93,8 +93,14 @@ function saveClipsDb() {
     try { fs.writeFileSync(clipsDbPath, JSON.stringify([...postedClips], null, 2), 'utf8'); } catch (e) {}
 }
 
+// isLive persistence (survives restarts to avoid duplicate live alerts)
+const isLivePath = '/home/runner/islive.json';
+let isLive = false;
+try { if (fs.existsSync(isLivePath)) isLive = JSON.parse(fs.readFileSync(isLivePath, 'utf8')).isLive || false; } catch(e) {}
+function saveIsLive(val) { try { fs.writeFileSync(isLivePath, JSON.stringify({ isLive: val })); } catch(e) {} }
+
 // Client Ready
-client.once('ready', async () => {
+client.once('clientReady', async () => {
     console.log(`=================================================================`);
     console.log(`🏰 THE VILLAGE BOT (NODE.JS 24/7 CLOUD ENGINE) IS LIVE!`);
     console.log(`Logged in as: ${client.user.tag}`);
@@ -110,7 +116,7 @@ client.once('ready', async () => {
                 { channelId: LEAGUE_CHANNEL_ID, msgId: LEAGUE_MSG_ID }
             ];
             for (const { channelId, msgId } of msgIds) {
-                const ch = guild.channels.cache.get(channelId);
+                const ch = await guild.channels.fetch(channelId).catch(() => null);
                 if (ch) await ch.messages.fetch(msgId).catch(() => {});
             }
             console.log(`✅ Reaction role messages pre-fetched and cached!`);
@@ -140,7 +146,7 @@ client.on('guildMemberAdd', async (member) => {
         // Send Welcome Message
         const welcomeChannel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
         if (welcomeChannel) {
-            const avatarUrl = member.displayAvatarURL({ dynamic: true, size: 256 });
+            const avatarUrl = member.displayAvatarURL({ size: 256, forceStatic: false });
             const welcomeEmbed = new EmbedBuilder()
                 .setTitle('🏡 مرحباً بك في القرية • WELCOME TO THE VILLAGE!')
                 .setDescription(
@@ -281,7 +287,6 @@ client.on('messageReactionRemove', async (reaction, user) => {
 });
 
 // Twitch Live & Clips Engine
-let isLive = false;
 
 async function startTwitchMonitor() {
     setInterval(async () => {
@@ -300,7 +305,7 @@ async function startTwitchMonitor() {
                       viewersCount
                       previewImageURL(width: 1280, height: 720)
                     }
-                    clips(first: 5, criteria: { filter: LAST_WEEK }) {
+                    clips(first: 20, criteria: { filter: LAST_WEEK }) {
                       edges {
                         node {
                           id
@@ -333,6 +338,7 @@ async function startTwitchMonitor() {
             // Live Alert
             if (user.stream && !isLive) {
                 isLive = true;
+                saveIsLive(true);
                 const annChannel = guild.channels.cache.get(ANNOUNCEMENTS_CHANNEL_ID);
                 if (annChannel) {
                     const liveEmbed = new EmbedBuilder()
@@ -354,6 +360,7 @@ async function startTwitchMonitor() {
                 }
             } else if (!user.stream && isLive) {
                 isLive = false;
+                saveIsLive(false);
             }
 
             // Clips
@@ -386,7 +393,7 @@ async function startTwitchMonitor() {
                 }
             }
         } catch (e) {}
-    }, 30000);
+    }, 300000); // every 5 minutes
 }
 
 // Start
