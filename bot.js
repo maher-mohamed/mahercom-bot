@@ -205,24 +205,47 @@ client.on('messageReactionAdd', async (reaction, user) => {
     const member = await reaction.message.guild.members.fetch(user.id).catch(() => null);
     if (!member) return;
 
-    // Pick Games
+    // Pick Games (multi-select allowed)
     if (msgId === PICK_GAMES_MSG_ID && gameRoleMap[emojiTag]) {
         await member.roles.add(gameRoleMap[emojiTag]).catch(() => {});
         console.log(`🎯 Assigned game role ${gameRoleMap[emojiTag]} to ${user.username}`);
     }
 
-    // Valo Ranks
+    // Valo Ranks (single-select: one rank only)
     if (msgId === VALO_MSG_ID && valoRankMap[emojiTag]) {
-        await member.roles.add(valoRankMap[emojiTag]).catch(() => {});
-        console.log(`🎯 Assigned Valo rank role to ${user.username}`);
+        const currentValoRank = Object.values(valoRankMap).find(roleId => member.roles.cache.has(roleId));
+        if (currentValoRank) {
+            // Already has a rank - remove the new reaction and DM them
+            await reaction.users.remove(user.id).catch(() => {});
+            await user.send(
+                `⚠️ **عندك رانك Valorant بالفعل!**\n` +
+                `شيل الرانك الحالي بتاعك الأول من قناة الرانكات، وبعدين اختار الجديد! 🎮`
+            ).catch(() => {});
+            console.log(`🚫 Blocked ${user.username} from picking second Valo rank`);
+        } else {
+            await member.roles.add(valoRankMap[emojiTag]).catch(() => {});
+            console.log(`🎯 Assigned Valo rank role to ${user.username}`);
+        }
     }
 
-    // League Ranks
+    // League Ranks (single-select: one rank only)
     if (msgId === LEAGUE_MSG_ID && leagueRankMap[emojiTag]) {
-        await member.roles.add(leagueRankMap[emojiTag]).catch(() => {});
-        console.log(`⚔️ Assigned League rank role to ${user.username}`);
+        const currentLeagueRank = Object.values(leagueRankMap).find(roleId => member.roles.cache.has(roleId));
+        if (currentLeagueRank) {
+            // Already has a rank - remove the new reaction and DM them
+            await reaction.users.remove(user.id).catch(() => {});
+            await user.send(
+                `⚠️ **عندك رانك League of Legends بالفعل!**\n` +
+                `شيل الرانك الحالي بتاعك الأول من قناة الرانكات، وبعدين اختار الجديد! ⚔️`
+            ).catch(() => {});
+            console.log(`🚫 Blocked ${user.username} from picking second League rank`);
+        } else {
+            await member.roles.add(leagueRankMap[emojiTag]).catch(() => {});
+            console.log(`⚔️ Assigned League rank role to ${user.username}`);
+        }
     }
 });
+
 
 // Reaction REMOVE Handler (Remove Role when reaction removed)
 client.on('messageReactionRemove', async (reaction, user) => {
