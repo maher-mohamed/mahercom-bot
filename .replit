@@ -1,0 +1,8 @@
+run = "node bot.js"
+entrypoint = "bot.js"
+
+[nix]
+channel = "stable-23_05"
+
+[deployment]
+run = ["node", "bot.js"]
