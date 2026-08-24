@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -301,9 +301,18 @@ async function startTwitchMonitor() {
                         .setFooter({ text: 'The Village Live Alerts • Twitch Stream' })
                         .setTimestamp();
 
+                    // إنشاء زر Watch Stream
+                    const watchButton = new ButtonBuilder()
+                        .setLabel('Watch Stream')
+                        .setStyle(ButtonStyle.Link)
+                        .setURL(`https://www.twitch.tv/${STREAMER}`);
+
+                    const row = new ActionRowBuilder().addComponents(watchButton);
+
                     await annChannel.send({
                         content: `@everyone 🚀 Going live now! Grab your snacks and hop in:\nhttps://www.twitch.tv/${STREAMER}`,
-                        embeds: [liveEmbed]
+                        embeds: [liveEmbed],
+                        components: [row]
                     });
                 }
             } else if (!user.stream && isLive) {
