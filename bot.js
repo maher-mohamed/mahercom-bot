@@ -146,7 +146,7 @@ client.on('guildMemberUpdate', (oldMember, newMember) => {
     }
 });
 
-// Reaction Add Handler (Single Rank System + Auto Remove Old Reactions)
+// Reaction Add Handler (Instant Single Rank System)
 client.on('messageReactionAdd', async (reaction, user) => {
     if (user.bot) return;
 
@@ -156,12 +156,13 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
     const msgId = reaction.message.id;
     const emojiTag = reaction.emoji.id ? `${reaction.emoji.name}:${reaction.emoji.id}` : reaction.emoji.name;
-    const member = await reaction.message.guild.members.fetch(user.id).catch(() => null);
+
+    const member = reaction.message.guild.members.cache.get(user.id) || await reaction.message.guild.members.fetch(user.id).catch(() => null);
     if (!member) return;
 
     // Pick Games
     if (msgId === PICK_GAMES_MSG_ID && gameRoleMap[emojiTag]) {
-        await member.roles.add(gameRoleMap[emojiTag]).catch(() => {});
+        member.roles.add(gameRoleMap[emojiTag]).catch(() => {});
         console.log(`🎯 Assigned game role ${gameRoleMap[emojiTag]} to ${user.username}`);
     }
 
@@ -172,18 +173,18 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
         const rolesToRemove = valoRoleIds.filter(id => id !== targetRoleId && member.roles.cache.has(id));
         if (rolesToRemove.length > 0) {
-            await member.roles.remove(rolesToRemove).catch(() => {});
+            member.roles.remove(rolesToRemove).catch(() => {});
         }
 
-        await member.roles.add(targetRoleId).catch(() => {});
+        member.roles.add(targetRoleId).catch(() => {});
         console.log(`🎯 Updated Valo rank for ${user.username}`);
 
-        for (const [key, reactionObj] of reaction.message.reactions.cache) {
+        reaction.message.reactions.cache.forEach((reactionObj) => {
             const tag = reactionObj.emoji.id ? `${reactionObj.emoji.name}:${reactionObj.emoji.id}` : reactionObj.emoji.name;
             if (valoRankMap[tag] && tag !== emojiTag) {
                 reactionObj.users.remove(user.id).catch(() => {});
             }
-        }
+        });
     }
 
     // League of Legends Ranks
@@ -193,18 +194,18 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
         const rolesToRemove = leagueRoleIds.filter(id => id !== targetRoleId && member.roles.cache.has(id));
         if (rolesToRemove.length > 0) {
-            await member.roles.remove(rolesToRemove).catch(() => {});
+            member.roles.remove(rolesToRemove).catch(() => {});
         }
 
-        await member.roles.add(targetRoleId).catch(() => {});
+        member.roles.add(targetRoleId).catch(() => {});
         console.log(`⚔️ Updated League rank for ${user.username}`);
 
-        for (const [key, reactionObj] of reaction.message.reactions.cache) {
+        reaction.message.reactions.cache.forEach((reactionObj) => {
             const tag = reactionObj.emoji.id ? `${reactionObj.emoji.name}:${reactionObj.emoji.id}` : reactionObj.emoji.name;
             if (leagueRankMap[tag] && tag !== emojiTag) {
                 reactionObj.users.remove(user.id).catch(() => {});
             }
-        }
+        });
     }
 });
 
@@ -218,17 +219,18 @@ client.on('messageReactionRemove', async (reaction, user) => {
 
     const msgId = reaction.message.id;
     const emojiTag = reaction.emoji.id ? `${reaction.emoji.name}:${reaction.emoji.id}` : reaction.emoji.name;
-    const member = await reaction.message.guild.members.fetch(user.id).catch(() => null);
+
+    const member = reaction.message.guild.members.cache.get(user.id) || await reaction.message.guild.members.fetch(user.id).catch(() => null);
     if (!member) return;
 
     if (msgId === PICK_GAMES_MSG_ID && gameRoleMap[emojiTag]) {
-        await member.roles.remove(gameRoleMap[emojiTag]).catch(() => {});
+        member.roles.remove(gameRoleMap[emojiTag]).catch(() => {});
     }
     if (msgId === VALO_MSG_ID && valoRankMap[emojiTag]) {
-        await member.roles.remove(valoRankMap[emojiTag]).catch(() => {});
+        member.roles.remove(valoRankMap[emojiTag]).catch(() => {});
     }
     if (msgId === LEAGUE_MSG_ID && leagueRankMap[emojiTag]) {
-        await member.roles.remove(leagueRankMap[emojiTag]).catch(() => {});
+        member.roles.remove(leagueRankMap[emojiTag]).catch(() => {});
     }
 });
 
