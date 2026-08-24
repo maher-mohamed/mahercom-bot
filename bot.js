@@ -1,21 +1,17 @@
 const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require('discord.js');
 const axios = require('axios');
 const fs = require('fs');
+const path = require('path');
 const express = require('express');
-const net = require('net');
 
 // Express server for 24/7 Cloud pinging
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('🏰 The Village Bot is running 24/7!'));
-app.listen(PORT, () => console.log(`🌍 Health server active on port ${PORT}`)).on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-        console.log(`🌍 Port ${PORT} in use, skipping web server and continuing bot startup.`);
-    }
-});
+app.listen(PORT, () => console.log(`🌍 Health server active on port ${PORT}`));
 
 // Config
-const TOKEN = process.env.DISCORD_TOKEN || Buffer.from("TVRVME1Ea3dNRFU0TkRneE16YzFOalUxTnc.R09FcDF0LldHblY4bEZWNzhMdThmeDYtQ2hhbER2Ql9uZGlpSGY1Zjh6VmdV".replace('.', '/'), 'base64').toString('utf8');
+const TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = "1048666169227362454";
 const WELCOME_CHANNEL_ID = "1540410745697607741";
 const ANNOUNCEMENTS_CHANNEL_ID = "1540410823355277485";
@@ -76,8 +72,8 @@ const client = new Client({
     partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User, Partials.GuildMember]
 });
 
-// Sticky Roles DB (outside git workspace so git reset won't wipe it)
-const dbPath = '/home/runner/member_roles_db.json';
+// Sticky Roles DB
+const dbPath = path.join(__dirname, 'member_roles_db.json');
 let rolesDb = {};
 if (fs.existsSync(dbPath)) {
     try { rolesDb = JSON.parse(fs.readFileSync(dbPath, 'utf8')); } catch (e) {}
@@ -86,40 +82,14 @@ function saveDb() {
     try { fs.writeFileSync(dbPath, JSON.stringify(rolesDb, null, 2), 'utf8'); } catch (e) {}
 }
 
-// isLive persistence (survives restarts to avoid duplicate live alerts)
-const isLivePath = '/home/runner/islive.json';
-let isLive = false;
-try { if (fs.existsSync(isLivePath)) isLive = JSON.parse(fs.readFileSync(isLivePath, 'utf8')).isLive || false; } catch(e) {}
-function saveIsLive(val) { try { fs.writeFileSync(isLivePath, JSON.stringify({ isLive: val })); } catch(e) {} }
-
 // Client Ready
-client.once('clientReady', async () => {
+client.once('ready', () => {
     console.log(`=================================================================`);
     console.log(`🏰 THE VILLAGE BOT (NODE.JS 24/7 CLOUD ENGINE) IS LIVE!`);
     console.log(`Logged in as: ${client.user.tag}`);
     console.log(`=================================================================`);
-
-    // Pre-fetch reaction role messages so Remove events work correctly
-    try {
-        const guild = client.guilds.cache.get(GUILD_ID);
-        if (guild) {
-            const msgIds = [
-                { channelId: PICK_GAMES_CHANNEL, msgId: PICK_GAMES_MSG_ID },
-                { channelId: VALO_CHANNEL_ID, msgId: VALO_MSG_ID },
-                { channelId: LEAGUE_CHANNEL_ID, msgId: LEAGUE_MSG_ID }
-            ];
-            for (const { channelId, msgId } of msgIds) {
-                const ch = await guild.channels.fetch(channelId).catch(() => null);
-                if (ch) await ch.messages.fetch(msgId).catch(() => {});
-            }
-            console.log(`✅ Reaction role messages pre-fetched and cached!`);
-        }
-    } catch (e) { console.error('Pre-fetch error:', e); }
-
     startTwitchMonitor();
-    connectTwitchChat();
 });
-
 
 // Auto-Welcome & Villager Role on Member Join
 client.on('guildMemberAdd', async (member) => {
@@ -140,7 +110,7 @@ client.on('guildMemberAdd', async (member) => {
         // Send Welcome Message
         const welcomeChannel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
         if (welcomeChannel) {
-            const avatarUrl = member.displayAvatarURL({ size: 256, forceStatic: false });
+            const avatarUrl = member.displayAvatarURL({ dynamic: true, size: 256 });
             const welcomeEmbed = new EmbedBuilder()
                 .setTitle('🏡 مرحباً بك في القرية • WELCOME TO THE VILLAGE!')
                 .setDescription(
@@ -170,25 +140,10 @@ client.on('guildMemberAdd', async (member) => {
     }
 });
 
-// Save ALL roles when member LEAVES (for full restore on rejoin)
-client.on('guildMemberRemove', (member) => {
-    if (member.guild.id !== GUILD_ID || member.user.bot) return;
-    const allRoles = member.roles.cache
-        .filter(r => r.id !== member.guild.id) // exclude @everyone
-        .map(r => r.id);
-    if (allRoles.length > 0) {
-        rolesDb[member.id] = allRoles;
-        saveDb();
-        console.log(`💾 Saved ${allRoles.length} roles for ${member.user.username} on leave`);
-    }
-});
-
-// Update sticky roles on member update (role changes while in server)
+// Update sticky roles on member update
 client.on('guildMemberUpdate', (oldMember, newMember) => {
     if (newMember.guild.id === GUILD_ID && !newMember.user.bot) {
-        rolesDb[newMember.id] = newMember.roles.cache
-            .filter(r => r.id !== newMember.guild.id)
-            .map(r => r.id);
+        rolesDb[newMember.id] = newMember.roles.cache.map(r => r.id);
         saveDb();
     }
 });
@@ -205,259 +160,136 @@ client.on('messageReactionAdd', async (reaction, user) => {
     const member = await reaction.message.guild.members.fetch(user.id).catch(() => null);
     if (!member) return;
 
-    // Pick Games (multi-select allowed)
+    // Pick Games
     if (msgId === PICK_GAMES_MSG_ID && gameRoleMap[emojiTag]) {
         await member.roles.add(gameRoleMap[emojiTag]).catch(() => {});
         console.log(`🎯 Assigned game role ${gameRoleMap[emojiTag]} to ${user.username}`);
     }
 
-    // Valo Ranks (Auto-switch: ONE rank role at a time, instant)
-    if (msgId === VALO_MSG_ID && valoRankMap[emojiTag]) {
-        const freshMember = await reaction.message.guild.members.fetch({ user: user.id, force: true }).catch(() => member);
-        const newRoleId = valoRankMap[emojiTag];
-        // Remove all other Valo rank roles instantly
-        const removes = Object.values(valoRankMap)
-            .filter(rid => rid !== newRoleId && freshMember.roles.cache.has(rid))
-            .map(rid => freshMember.roles.remove(rid).catch(() => {}));
-        await Promise.all(removes);
-        // Add new rank role
-        await freshMember.roles.add(newRoleId).catch(() => {});
-        console.log(`🎯 [Valo Rank] ${user.username} → rank updated instantly`);
-    }
-
-    // League Ranks (Auto-switch: ONE rank role at a time, instant)
-    if (msgId === LEAGUE_MSG_ID && leagueRankMap[emojiTag]) {
-        const freshMember = await reaction.message.guild.members.fetch({ user: user.id, force: true }).catch(() => member);
-        const newRoleId = leagueRankMap[emojiTag];
-        // Remove all other League rank roles instantly
-        const removes = Object.values(leagueRankMap)
-            .filter(rid => rid !== newRoleId && freshMember.roles.cache.has(rid))
-            .map(rid => freshMember.roles.remove(rid).catch(() => {}));
-        await Promise.all(removes);
-        // Add new rank role
-        await freshMember.roles.add(newRoleId).catch(() => {});
-        console.log(`⚔️ [League Rank] ${user.username} → rank updated instantly`);
-    }
-});
-
-
-// Reaction REMOVE Handler (Remove Role when user manually removes their reaction)
-client.on('messageReactionRemove', async (reaction, user) => {
-    if (user.bot) return;
-    if (reaction.partial) {
-        try { await reaction.fetch(); } catch (e) { return; }
-    }
-
-    const msgId = reaction.message.id;
-    const emojiTag = reaction.emoji.id ? `${reaction.emoji.name}:${reaction.emoji.id}` : reaction.emoji.name;
-    const member = await reaction.message.guild.members.fetch(user.id).catch(() => null);
-    if (!member) return;
-
-    // Pick Games
-    if (msgId === PICK_GAMES_MSG_ID && gameRoleMap[emojiTag]) {
-        await member.roles.remove(gameRoleMap[emojiTag]).catch(() => {});
-        console.log(`❌ Removed game role ${gameRoleMap[emojiTag]} from ${user.username}`);
-    }
-
     // Valo Ranks
     if (msgId === VALO_MSG_ID && valoRankMap[emojiTag]) {
-        await member.roles.remove(valoRankMap[emojiTag]).catch(() => {});
-        console.log(`❌ Removed Valo rank role from ${user.username}`);
+        await member.roles.add(valoRankMap[emojiTag]).catch(() => {});
+        console.log(`🎯 Assigned Valo rank role to ${user.username}`);
     }
 
     // League Ranks
     if (msgId === LEAGUE_MSG_ID && leagueRankMap[emojiTag]) {
-        await member.roles.remove(leagueRankMap[emojiTag]).catch(() => {});
-        console.log(`❌ Removed League rank role from ${user.username}`);
+        await member.roles.add(leagueRankMap[emojiTag]).catch(() => {});
+        console.log(`⚔️ Assigned League rank role to ${user.username}`);
     }
 });
 
-// Twitch Live Engine
-async function checkTwitchLive() {
-    try {
-        const query = {
-            query: `
-            query {
-              user(login: "${STREAMER}") {
-                id
-                login
-                displayName
-                stream {
-                  id
-                  title
-                  game { name }
-                  viewersCount
-                  previewImageURL(width: 1280, height: 720)
+// Twitch Live & Clips Engine
+let isLive = false;
+const postedClips = new Set();
+
+async function startTwitchMonitor() {
+    setInterval(async () => {
+        try {
+            const query = {
+                query: `
+                query {
+                  user(login: "${STREAMER}") {
+                    id
+                    login
+                    displayName
+                    stream {
+                      id
+                      title
+                      game { name }
+                      viewersCount
+                      previewImageURL(width: 1280, height: 720)
+                    }
+                    clips(first: 5, criteria: { filter: LAST_WEEK }) {
+                      edges {
+                        node {
+                          id
+                          slug
+                          title
+                          url
+                          durationSeconds
+                          thumbnailURL
+                          curator { displayName }
+                        }
+                      }
+                    }
+                  }
+                }`
+            };
+
+            const res = await axios.post('https://gql.twitch.tv/gql', query, {
+                headers: {
+                    'Client-ID': 'kimne78kx3ncx6brgo4mv6wki5h1ko',
+                    'Content-Type': 'application/json'
                 }
-              }
-            }`
-        };
+            });
 
-        const res = await axios.post('https://gql.twitch.tv/gql', query, {
-            headers: {
-                'Client-ID': 'kimne78kx3ncx6brgo4mv6wki5h1ko',
-                'Content-Type': 'application/json'
-            }
-        });
+            const user = res.data?.data?.user;
+            if (!user) return;
 
-        const user = res.data?.data?.user;
-        if (!user) return;
+            const guild = client.guilds.cache.get(GUILD_ID);
+            if (!guild) return;
 
-        const guild = client.guilds.cache.get(GUILD_ID);
-        if (!guild) return;
+            if (user.stream && !isLive) {
+                isLive = true;
+                const annChannel = guild.channels.cache.get(ANNOUNCEMENTS_CHANNEL_ID);
+                if (annChannel) {
+                    const liveEmbed = new EmbedBuilder()
+                        .setTitle(user.stream.title || 'Live Stream')
+                        .setURL(`https://www.twitch.tv/${STREAMER}`)
+                        .setColor(0x0099FF)
+                        .addFields(
+                            { name: '🎮 Playing', value: user.stream.game?.name || 'Just Chatting', inline: true },
+                            { name: '👀 Viewers', value: `${user.stream.viewersCount}`, inline: true }
+                        )
+                        .setImage(`${user.stream.previewImageURL}?r=${Date.now()}`)
+                        .setFooter({ text: 'The Village Live Alerts • Twitch Stream' })
+                        .setTimestamp();
 
-        // Live Alert
-        if (user.stream && !isLive) {
-            isLive = true;
-            saveIsLive(true);
-            const annChannel = guild.channels.cache.get(ANNOUNCEMENTS_CHANNEL_ID);
-            if (annChannel) {
-                const liveEmbed = new EmbedBuilder()
-                    .setTitle(user.stream.title || 'Live Stream')
-                    .setURL(`https://www.twitch.tv/${STREAMER}`)
-                    .setColor(0x0099FF)
-                    .addFields(
-                        { name: '🎮 Playing', value: user.stream.game?.name || 'Just Chatting', inline: true },
-                        { name: '👀 Viewers', value: `${user.stream.viewersCount}`, inline: true }
-                    )
-                    .setImage(`${user.stream.previewImageURL}?r=${Date.now()}`)
-                    .setFooter({ text: 'The Village Live Alerts • Twitch Stream' })
-                    .setTimestamp();
-
-                await annChannel.send({
-                    content: `@everyone 🚀 Going live now! Grab your snacks and hop in:\nhttps://www.twitch.tv/${STREAMER}`,
-                    embeds: [liveEmbed]
-                });
-            }
-        } else if (!user.stream && isLive) {
-            isLive = false;
-            saveIsLive(false);
-        }
-    } catch (e) {}
-}
-
-function startTwitchMonitor() {
-    checkTwitchLive(); // Check immediately on startup
-    setInterval(() => checkTwitchLive(), 300000); // Then check every 5 minutes
-}
-
-// Fetch Clip Info from Twitch GQL by Slug
-async function getClipBySlug(slug) {
-    const query = {
-        query: `
-        query {
-          clip(slug: "${slug}") {
-            id
-            slug
-            title
-            url
-            durationSeconds
-            thumbnailURL
-            curator { displayName }
-          }
-        }`
-    };
-    const res = await axios.post('https://gql.twitch.tv/gql', query, {
-        headers: {
-            'Client-ID': 'kimne78kx3ncx6brgo4mv6wki5h1ko',
-            'Content-Type': 'application/json'
-        }
-    });
-    return res.data?.data?.clip;
-}
-
-// Helper: Build and Send Clip Embed to Discord Channel
-async function publishClipToChannel(clip) {
-    const guild = client.guilds.cache.get(GUILD_ID);
-    if (!guild) return;
-    const clipsChannel = guild.channels.cache.get(CLIPS_CHANNEL_ID) || await guild.channels.fetch(CLIPS_CHANNEL_ID).catch(() => null);
-    if (!clipsChannel) return;
-
-    const clipEmbed = new EmbedBuilder()
-        .setTitle(`🎥 ${clip.title}`)
-        .setURL(clip.url)
-        .setColor(0x0099FF)
-        .addFields(
-            { name: '👤 Clipped By', value: clip.curator?.displayName || 'Viewer', inline: true },
-            { name: '⏱️ Duration', value: `${clip.durationSeconds}s`, inline: true }
-        )
-        .setImage(clip.thumbnailURL)
-        .setFooter({ text: 'The Village Clips • Mahercom (Twitch Chat 💬)' })
-        .setTimestamp();
-
-    await clipsChannel.send({
-        content: `🎬 **New Clip from Mahercom's Stream!**\n${clip.url}`,
-        embeds: [clipEmbed]
-    });
-    console.log(`🚀 [Twitch Chat] Successfully published clip: ${clip.title} (${clip.slug})`);
-}
-
-// Twitch Chat (IRC) Real-time Listener
-const recentChatClips = new Set();
-
-function connectTwitchChat() {
-    console.log(`📡 Connecting to Twitch Chat (#${STREAMER})...`);
-    const socket = new net.Socket();
-
-    socket.connect(6667, 'irc.chat.twitch.tv', () => {
-        console.log(`✅ Connected to Twitch Chat! Listening for clips in #${STREAMER}...`);
-        socket.write('PASS justinfan12345\r\n');
-        socket.write('NICK justinfan12345\r\n');
-        socket.write(`JOIN #${STREAMER}\r\n`);
-    });
-
-    socket.on('data', async (data) => {
-        const lines = data.toString().split('\r\n');
-        for (const line of lines) {
-            if (!line) continue;
-            
-            // Keep-alive ping/pong
-            if (line.startsWith('PING')) {
-                socket.write('PONG :tmi.twitch.tv\r\n');
-                continue;
+                    await annChannel.send({
+                        content: `@everyone 🚀 Going live now! Grab your snacks and hop in:\nhttps://www.twitch.tv/${STREAMER}`,
+                        embeds: [liveEmbed]
+                    });
+                }
+            } else if (!user.stream && isLive) {
+                isLive = false;
             }
 
-            // Chat message
-            if (line.includes(`PRIVMSG #${STREAMER} :`)) {
-                const parts = line.split(`PRIVMSG #${STREAMER} :`);
-                const messageText = parts.slice(1).join(`PRIVMSG #${STREAMER} :`);
-                
-                // Detect Twitch clip link
-                const match = messageText.match(/https?:\/\/(?:www\.)?(?:clips\.twitch\.tv\/[^\s]+|twitch\.tv\/[a-zA-Z0-9_]+\/clip\/[^\s]+)/i);
-                if (match) {
-                    const rawUrl = match[0];
-                    const slugMatch = rawUrl.match(/(?:clip\/|clips\.twitch\.tv\/)([^/?#\s]+)/);
-                    const slug = slugMatch ? slugMatch[1] : null;
+            // Clips
+            if (user.clips?.edges) {
+                for (const edge of user.clips.edges) {
+                    const clip = edge.node;
+                    
+                    if (!postedClips.has(clip.slug)) {
+                        postedClips.add(clip.slug);
+                        const clipsChannel = guild.channels.cache.get(CLIPS_CHANNEL_ID);
 
-                    if (slug && !recentChatClips.has(slug)) {
-                        recentChatClips.add(slug);
-                        setTimeout(() => recentChatClips.delete(slug), 10 * 60 * 1000); // 10 min de-duplication
+                        if (clipsChannel) {
+                            const clipEmbed = new EmbedBuilder()
+                                .setTitle(`🎥 ${clip.title}`)
+                                .setURL(clip.url)
+                                .setColor(0x0099FF)
+                                .addFields(
+                                    { name: '👤 Clipped By', value: clip.curator?.displayName || 'Viewer', inline: true },
+                                    { name: '⏱️ Duration', value: `${clip.durationSeconds}s`, inline: true }
+                                )
+                                .setImage(clip.thumbnailURL)
+                                .setFooter({ text: 'The Village Clips • Mahercom' })
+                                .setTimestamp();
 
-                        console.log(`🎯 [Twitch Chat] Detected clip link: ${rawUrl}`);
-                        try {
-                            const clip = await getClipBySlug(slug);
-                            if (clip) {
-                                await publishClipToChannel(clip);
-                            }
-                        } catch (err) {
-                            console.error('Error handling chat clip:', err.message);
+                            await clipsChannel.send({
+                                content: `🎬 **New Clip from Mahercom's Stream!**\n${clip.url}`,
+                                embeds: [clipEmbed]
+                            });
                         }
                     }
                 }
             }
+        } catch (e) {
+            console.error('Twitch Monitor Error:', e.message);
         }
-    });
-
-    socket.on('close', () => {
-        console.log('⚠️ Twitch chat disconnected. Reconnecting in 5 seconds...');
-        setTimeout(connectTwitchChat, 5000);
-    });
-
-    socket.on('error', (err) => {
-        console.error('Twitch chat socket error:', err.message);
-    });
+    }, 30000);
 }
 
 // Start
 client.login(TOKEN);
-
