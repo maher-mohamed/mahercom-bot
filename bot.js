@@ -60,7 +60,7 @@ const leagueRankMap = {
     "lol_challenger:1540932610639921173": "1540929788930162748"
 };
 
-// Client Init with all required Gateway Intents
+// Client Init with required Gateway Intents
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -96,7 +96,6 @@ client.on('guildMemberAdd', async (member) => {
     if (member.guild.id !== GUILD_ID || member.user.bot) return;
 
     try {
-        // Sticky Roles Restore or Villager Role
         if (rolesDb[member.id] && rolesDb[member.id].length > 0) {
             for (const rid of rolesDb[member.id]) {
                 await member.roles.add(rid).catch(() => {});
@@ -107,7 +106,6 @@ client.on('guildMemberAdd', async (member) => {
             console.log(`➕ Assigned Villager role to ${member.user.username}`);
         }
 
-        // Send Welcome Message
         const welcomeChannel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
         if (welcomeChannel) {
             const avatarUrl = member.displayAvatarURL({ dynamic: true, size: 256 });
@@ -148,9 +146,10 @@ client.on('guildMemberUpdate', (oldMember, newMember) => {
     }
 });
 
-// Reaction Add Handler (Instant Role Assignment)
+// Reaction Add Handler (Single Rank System + Auto Remove Old Reactions)
 client.on('messageReactionAdd', async (reaction, user) => {
     if (user.bot) return;
+
     if (reaction.partial) {
         try { await reaction.fetch(); } catch (e) { return; }
     }
@@ -166,16 +165,70 @@ client.on('messageReactionAdd', async (reaction, user) => {
         console.log(`🎯 Assigned game role ${gameRoleMap[emojiTag]} to ${user.username}`);
     }
 
-    // Valo Ranks
+    // Valorant Ranks
     if (msgId === VALO_MSG_ID && valoRankMap[emojiTag]) {
-        await member.roles.add(valoRankMap[emojiTag]).catch(() => {});
-        console.log(`🎯 Assigned Valo rank role to ${user.username}`);
+        const targetRoleId = valoRankMap[emojiTag];
+        const valoRoleIds = Object.values(valoRankMap);
+
+        const rolesToRemove = valoRoleIds.filter(id => id !== targetRoleId && member.roles.cache.has(id));
+        if (rolesToRemove.length > 0) {
+            await member.roles.remove(rolesToRemove).catch(() => {});
+        }
+
+        await member.roles.add(targetRoleId).catch(() => {});
+        console.log(`🎯 Updated Valo rank for ${user.username}`);
+
+        for (const [key, reactionObj] of reaction.message.reactions.cache) {
+            const tag = reactionObj.emoji.id ? `${reactionObj.emoji.name}:${reactionObj.emoji.id}` : reactionObj.emoji.name;
+            if (valoRankMap[tag] && tag !== emojiTag) {
+                reactionObj.users.remove(user.id).catch(() => {});
+            }
+        }
     }
 
-    // League Ranks
+    // League of Legends Ranks
     if (msgId === LEAGUE_MSG_ID && leagueRankMap[emojiTag]) {
-        await member.roles.add(leagueRankMap[emojiTag]).catch(() => {});
-        console.log(`⚔️ Assigned League rank role to ${user.username}`);
+        const targetRoleId = leagueRankMap[emojiTag];
+        const leagueRoleIds = Object.values(leagueRankMap);
+
+        const rolesToRemove = leagueRoleIds.filter(id => id !== targetRoleId && member.roles.cache.has(id));
+        if (rolesToRemove.length > 0) {
+            await member.roles.remove(rolesToRemove).catch(() => {});
+        }
+
+        await member.roles.add(targetRoleId).catch(() => {});
+        console.log(`⚔️ Updated League rank for ${user.username}`);
+
+        for (const [key, reactionObj] of reaction.message.reactions.cache) {
+            const tag = reactionObj.emoji.id ? `${reactionObj.emoji.name}:${reactionObj.emoji.id}` : reactionObj.emoji.name;
+            if (leagueRankMap[tag] && tag !== emojiTag) {
+                reactionObj.users.remove(user.id).catch(() => {});
+            }
+        }
+    }
+});
+
+// Reaction Remove Handler
+client.on('messageReactionRemove', async (reaction, user) => {
+    if (user.bot) return;
+
+    if (reaction.partial) {
+        try { await reaction.fetch(); } catch (e) { return; }
+    }
+
+    const msgId = reaction.message.id;
+    const emojiTag = reaction.emoji.id ? `${reaction.emoji.name}:${reaction.emoji.id}` : reaction.emoji.name;
+    const member = await reaction.message.guild.members.fetch(user.id).catch(() => null);
+    if (!member) return;
+
+    if (msgId === PICK_GAMES_MSG_ID && gameRoleMap[emojiTag]) {
+        await member.roles.remove(gameRoleMap[emojiTag]).catch(() => {});
+    }
+    if (msgId === VALO_MSG_ID && valoRankMap[emojiTag]) {
+        await member.roles.remove(valoRankMap[emojiTag]).catch(() => {});
+    }
+    if (msgId === LEAGUE_MSG_ID && leagueRankMap[emojiTag]) {
+        await member.roles.remove(leagueRankMap[emojiTag]).catch(() => {});
     }
 });
 
