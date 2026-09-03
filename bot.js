@@ -17,7 +17,7 @@ const WELCOME_CHANNEL_ID = "1540410745697607741";
 const ANNOUNCEMENTS_CHANNEL_ID = "1540410823355277485";
 const CLIPS_CHANNEL_ID = "1540411974548979772";
 const VILLAGER_ROLE_ID = "1540445773638934528";
-const STREAMER = "mahercom_";
+const STREAMER = "elmaher_";
 
 // Reaction Role Channels & Messages
 const PICK_GAMES_CHANNEL = "1540930458831814666";
@@ -113,16 +113,16 @@ client.on('guildMemberAdd', async (member) => {
                 .setTitle('🏡 مرحباً بك في القرية • WELCOME TO THE VILLAGE!')
                 .setDescription(
                     `نورت السيرفر الرسمي لـ **ماهركم** وقريتكم البسيطة! جهز السناكس وانضم للشباب 🎮💙\n` +
-                    `Welcome to **Mahercom's** official simple village! Grab your snacks & enjoy your time! 🎮💙\n\n` +
+                    `Welcome to **Elmaher_'s** official simple village! Grab your snacks & enjoy your time! 🎮💙\n\n` +
                     `🎮 **اختر ألعابك ورانكك | Pick Games & Ranks**\n<#${PICK_GAMES_CHANNEL}>\n\n` +
                     `📜 **قوانين القرية | Village Rules**\n<#1540918123060928554>\n\n` +
                     `💬 **الشات العام | General Chat**\n<#1540412171328950432>\n\n` +
-                    `📡 **بثوث ماهركم | Live Streams**\n[twitch.tv/mahercom_](https://www.twitch.tv/mahercom_)`
+                    `📡 **بثوث ماهركم | Live Streams**\n[twitch.tv/elmaher_](https://www.twitch.tv/elmaher_)`
                 )
                 .setColor(0x0099FF)
                 .setThumbnail(avatarUrl)
                 .setFooter({
-                    text: 'The Village • Mahercom',
+                    text: 'The Village • Elmaher',
                     iconURL: 'https://cdn.discordapp.com/icons/1048666169227362454/9964832d5fbe67935995439f4fb653be.png'
                 })
                 .setTimestamp();
@@ -338,11 +338,11 @@ async function startTwitchMonitor() {
                                     { name: '⏱️ Duration', value: `${clip.durationSeconds}s`, inline: true }
                                 )
                                 .setImage(clip.thumbnailURL)
-                                .setFooter({ text: 'The Village Clips • Mahercom' })
+                                .setFooter({ text: 'The Village Clips • Elmaher' })
                                 .setTimestamp();
 
                             await clipsChannel.send({
-                                content: `🎬 **New Clip from Mahercom's Stream!**\n${clip.url}`,
+                                content: `🎬 **New Clip from Elmaher's Stream!**\n${clip.url}`,
                                 embeds: [clipEmbed]
                             });
                         }
